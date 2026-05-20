@@ -1,5 +1,5 @@
 // Contains all database access functions used by the application.
-import { eq, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 
 import { db } from "~/db/client";
 import {
@@ -9,9 +9,11 @@ import {
   kv,
   subscriptions,
   type ChatType,
-  type GitHubEventPayload
+  type GitHubEventPayload,
+  type SubscriptionFilters
 } from "~/db/schema";
 import type { SchedulePreset, SubscriptionPreset } from "~/db/schema";
+import type { StoredEvent } from "~/github/types";
 
 export type UpsertChatInput = {
   id: number;
@@ -67,6 +69,17 @@ export type KvWriteInput = {
   updatedAt: Date;
 };
 
+export type CreateOrUpdateSubscriptionInput = {
+  chatId: number;
+  accountId: number;
+  preset: SubscriptionPreset;
+  filters: SubscriptionFilters;
+  schedulePreset: SchedulePreset;
+  timezone: string;
+  createdByUserId: number;
+  lastDeliveredAt?: Date | null;
+};
+
 export type SubscriptionListItem = {
   id: number;
   accountLogin: string;
@@ -74,6 +87,23 @@ export type SubscriptionListItem = {
   schedulePreset: SchedulePreset;
   timezone: string;
   paused: boolean;
+  lastDeliveredAt: Date | null;
+};
+
+export type SubscriptionScheduleItem = {
+  id: number;
+  schedulePreset: SchedulePreset;
+  timezone: string;
+};
+
+export type SubscriptionDeliveryRecord = {
+  id: number;
+  chatId: number;
+  chatActive: boolean;
+  chatBanned: boolean;
+  accountId: number;
+  accountLogin: string;
+  filters: SubscriptionFilters;
   lastDeliveredAt: Date | null;
 };
 
@@ -278,4 +308,110 @@ export const listSubscriptionsForChat = async (
     .from(subscriptions)
     .innerJoin(githubAccounts, eq(subscriptions.accountId, githubAccounts.id))
     .where(eq(subscriptions.chatId, chatId));
+};
+
+export const createOrUpdateSubscription = async (
+  input: CreateOrUpdateSubscriptionInput
+): Promise<number> => {
+  const [row] = await db
+    .insert(subscriptions)
+    .values({
+      chatId: input.chatId,
+      accountId: input.accountId,
+      preset: input.preset,
+      filters: input.filters,
+      schedulePreset: input.schedulePreset,
+      timezone: input.timezone,
+      paused: false,
+      createdByUserId: input.createdByUserId,
+      lastDeliveredAt: input.lastDeliveredAt ?? null
+    })
+    .onConflictDoUpdate({
+      target: [subscriptions.chatId, subscriptions.accountId],
+      set: {
+        preset: input.preset,
+        filters: input.filters,
+        schedulePreset: input.schedulePreset,
+        timezone: input.timezone,
+        paused: false
+      }
+    })
+    .returning({ id: subscriptions.id });
+
+  if (row === undefined) {
+    throw new Error("subscription upsert did not return an id");
+  }
+
+  return row.id;
+};
+
+export const listActiveSubscriptionSchedules = async (): Promise<
+  SubscriptionScheduleItem[]
+> => {
+  return db
+    .select({
+      id: subscriptions.id,
+      schedulePreset: subscriptions.schedulePreset,
+      timezone: subscriptions.timezone
+    })
+    .from(subscriptions)
+    .where(eq(subscriptions.paused, false));
+};
+
+export const getSubscriptionForDelivery = async (
+  subscriptionId: number
+): Promise<SubscriptionDeliveryRecord | null> => {
+  const [row] = await db
+    .select({
+      id: subscriptions.id,
+      chatId: subscriptions.chatId,
+      chatActive: chats.active,
+      chatBanned: chats.banned,
+      accountId: subscriptions.accountId,
+      accountLogin: githubAccounts.login,
+      filters: subscriptions.filters,
+      lastDeliveredAt: subscriptions.lastDeliveredAt
+    })
+    .from(subscriptions)
+    .innerJoin(chats, eq(subscriptions.chatId, chats.id))
+    .innerJoin(githubAccounts, eq(subscriptions.accountId, githubAccounts.id))
+    .where(eq(subscriptions.id, subscriptionId));
+
+  return row ?? null;
+};
+
+export const listEventsForDelivery = async (
+  accountId: number,
+  lastDeliveredAt: Date | null
+): Promise<StoredEvent[]> => {
+  const whereClause =
+    lastDeliveredAt === null
+      ? eq(events.accountId, accountId)
+      : and(eq(events.accountId, accountId), gt(events.createdAt, lastDeliveredAt));
+
+  return db
+    .select({
+      id: events.id,
+      accountId: events.accountId,
+      type: events.type,
+      repoName: events.repoName,
+      actorLogin: events.actorLogin,
+      payload: events.payload,
+      createdAt: events.createdAt
+    })
+    .from(events)
+    .where(whereClause)
+    .orderBy(asc(events.createdAt));
+};
+
+export const updateSubscriptionDeliveryCursor = async (
+  subscriptionId: number,
+  deliveredAt: Date
+): Promise<void> => {
+  await db
+    .update(subscriptions)
+    .set({
+      lastDeliveredAt: deliveredAt
+    })
+    .where(eq(subscriptions.id, subscriptionId));
 };

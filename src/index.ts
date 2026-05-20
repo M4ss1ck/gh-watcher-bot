@@ -3,6 +3,7 @@ import { createBot } from "~/bot";
 import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
 import { startCollector } from "~/scheduler/collector";
+import { startDeliverer } from "~/scheduler/deliverer";
 
 const shutdownSignals = ["SIGINT", "SIGTERM"] as const;
 
@@ -29,6 +30,9 @@ const main = async (): Promise<void> => {
   const collector = startCollector({
     cronExpression: env.POLL_INTERVAL_CRON
   });
+  const deliverer = startDeliverer({
+    api: bot.api
+  });
 
   const botRun = bot.start({
     allowed_updates: ["message", "my_chat_member"],
@@ -45,12 +49,16 @@ const main = async (): Promise<void> => {
   if (result.type === "bot_stopped") {
     logger.warn("bot polling stopped");
     collector.stop();
+    deliverer.stop();
+    await deliverer.onIdle();
     return;
   }
 
   logger.info({ signal: result.signal }, "shutdown requested");
 
   collector.stop();
+  deliverer.stop();
+  await deliverer.onIdle();
   await bot.stop();
   await botRun;
 

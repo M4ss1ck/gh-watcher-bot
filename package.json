@@ -8,6 +8,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "collector:run": "bun run scripts/run-collector.ts",
+    "deliverer:run": "bun run scripts/run-deliverer.ts",
+    "subscription:test:create": "bun run scripts/create-test-subscription.ts",
     "poll:once": "bun run scripts/poll-once.ts",
     "start": "bun run src/index.ts",
     "test": "bun test",
