@@ -41,6 +41,6 @@ const rawEnvSchema = z
     }
   });
 
-export const env = rawEnvSchema.parse(Bun.env);
+export const env = rawEnvSchema.parse(process.env);
 
 export type Env = typeof env;
