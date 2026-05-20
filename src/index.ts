@@ -2,6 +2,7 @@
 import { createBot } from "~/bot";
 import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
+import { startCollector } from "~/scheduler/collector";
 
 const shutdownSignals = ["SIGINT", "SIGTERM"] as const;
 
@@ -25,6 +26,9 @@ const main = async (): Promise<void> => {
   logger.info("starting");
 
   const bot = createBot();
+  const collector = startCollector({
+    cronExpression: env.POLL_INTERVAL_CRON
+  });
 
   const botRun = bot.start({
     allowed_updates: ["message", "my_chat_member"],
@@ -40,11 +44,13 @@ const main = async (): Promise<void> => {
 
   if (result.type === "bot_stopped") {
     logger.warn("bot polling stopped");
+    collector.stop();
     return;
   }
 
   logger.info({ signal: result.signal }, "shutdown requested");
 
+  collector.stop();
   await bot.stop();
   await botRun;
 

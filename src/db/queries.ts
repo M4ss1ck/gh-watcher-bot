@@ -59,12 +59,35 @@ export type RecordGitHubAccountPollFailureInput = {
   pausedUntil: Date | null;
 };
 
+export type KvWriteInput = {
+  key: string;
+  value: string;
+  updatedAt: Date;
+};
+
 const nowMs = sql`(unixepoch() * 1000)`;
 
 export const getKvValue = async (key: string): Promise<string | null> => {
   const [row] = await db.select({ value: kv.value }).from(kv).where(eq(kv.key, key));
 
   return row?.value ?? null;
+};
+
+export const setKvValue = async (input: KvWriteInput): Promise<void> => {
+  await db
+    .insert(kv)
+    .values({
+      key: input.key,
+      value: input.value,
+      updatedAt: input.updatedAt
+    })
+    .onConflictDoUpdate({
+      target: kv.key,
+      set: {
+        value: input.value,
+        updatedAt: input.updatedAt
+      }
+    });
 };
 
 export const upsertChat = async (input: UpsertChatInput): Promise<void> => {
@@ -137,6 +160,21 @@ export const getGitHubAccountByLogin = async (
     .where(eq(githubAccounts.login, login));
 
   return row ?? null;
+};
+
+export const listGitHubAccountsForPolling = async (): Promise<
+  GitHubAccountForPolling[]
+> => {
+  return db
+    .select({
+      id: githubAccounts.id,
+      login: githubAccounts.login,
+      etag: githubAccounts.etag,
+      lastEventId: githubAccounts.lastEventId,
+      consecutiveFailures: githubAccounts.consecutiveFailures,
+      pausedUntil: githubAccounts.pausedUntil
+    })
+    .from(githubAccounts);
 };
 
 export const insertGitHubEvents = async (
