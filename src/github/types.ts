@@ -19,6 +19,16 @@ export type GitHubUserSummary = {
   login: string;
 };
 
+export type StoredEvent = {
+  id: string;
+  accountId: number;
+  type: string;
+  repoName: string;
+  actorLogin: string;
+  payload: GitHubEventPayload;
+  createdAt: Date;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
