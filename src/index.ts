@@ -27,7 +27,7 @@ const main = async (): Promise<void> => {
   const bot = createBot();
 
   const botRun = bot.start({
-    allowed_updates: ["message"],
+    allowed_updates: ["message", "my_chat_member"],
     onStart: (botInfo) => {
       logger.info({ bot_username: botInfo.username }, "bot started");
     }

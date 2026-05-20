@@ -6,6 +6,7 @@ import { Bot, type Transformer } from "grammy";
 import { registerHelpCommand } from "~/bot/commands/help";
 import { registerPingCommand } from "~/bot/commands/ping";
 import { registerStartCommand } from "~/bot/commands/start";
+import { registerChatLifecycleHandlers } from "~/bot/middleware/chatRegistration";
 import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
 
@@ -39,6 +40,7 @@ export const createBot = (): Bot => {
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3 }));
   bot.api.config.use(htmlParseMode);
 
+  registerChatLifecycleHandlers(bot);
   registerStartCommand(bot);
   registerHelpCommand(bot);
   registerPingCommand(bot);
