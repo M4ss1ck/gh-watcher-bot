@@ -30,4 +30,16 @@ describe("public bot command text", () => {
       "alive, last collector tick unavailable"
     );
   });
+
+  test("admin ping includes diagnostics", () => {
+    expect(
+      buildPingMessage(null, 4_500, {
+        activeSubscriptions: 1,
+        activeChats: 2,
+        eventsIngestedLast24h: 3,
+        errorsLast24h: 0,
+        githubRateLimitRemaining: "unknown"
+      })
+    ).toContain("active subs 1");
+  });
 });

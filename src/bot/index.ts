@@ -3,6 +3,7 @@ import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
 import { Bot, type Transformer } from "grammy";
 
+import { adminMenu, registerAdminCommand, registerAdminMenus } from "~/bot/commands/admin";
 import { registerHelpCommand } from "~/bot/commands/help";
 import { registerPingCommand } from "~/bot/commands/ping";
 import { registerStartCommand } from "~/bot/commands/start";
@@ -48,6 +49,7 @@ const registerMenus = (): void => {
 
   rootMenu.register(subscriptionMenu);
   rootMenu.register([filtersMenu, scheduleMenu, timezoneMenu], "subscription-detail");
+  registerAdminMenus();
   menusRegistered = true;
 };
 
@@ -63,9 +65,11 @@ export const createBot = (): Bot => {
 
   registerChatLifecycleHandlers(bot);
   bot.use(rootMenu);
+  bot.use(adminMenu);
   registerStartCommand(bot);
   registerHelpCommand(bot);
   registerPingCommand(bot);
+  registerAdminCommand(bot);
   registerSubscribeCommand(bot);
 
   bot.catch((error) => {

@@ -11,6 +11,11 @@ import { applyFilters } from "~/filters/apply";
 import { renderEventDigest } from "~/formatting/render";
 import { writeDelivererHeartbeat } from "~/lifecycle/heartbeat";
 import { createChildLogger, logger } from "~/lib/logger";
+import {
+  incrementDeliverySent,
+  incrementTelegramApiError,
+  observeDeliveryDuration
+} from "~/lib/metrics";
 import { createDeliveryQueue } from "~/scheduler/queue";
 import { getScheduleCronExpression } from "~/scheduler/presets";
 
@@ -109,6 +114,28 @@ const newestCreatedAt = (events: StoredEvent[]): Date => {
   );
 };
 
+const getTelegramErrorCode = (error: unknown): number | null => {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+
+  if ("error_code" in error && typeof error.error_code === "number") {
+    return error.error_code;
+  }
+
+  if (!("error" in error)) {
+    return null;
+  }
+
+  const nested = error.error;
+
+  if (typeof nested !== "object" || nested === null || !("error_code" in nested)) {
+    return null;
+  }
+
+  return typeof nested.error_code === "number" ? nested.error_code : null;
+};
+
 const executeDeliveryTask = async (
   options: DeliveryTaskOptions,
   now: Date
@@ -158,6 +185,7 @@ const executeDeliveryTask = async (
 
   if (matchingEvents.length === 0) {
     await store.updateSubscriptionDeliveryCursor(subscription.id, now);
+    incrementDeliverySent("empty");
     taskLogger.debug(
       { source_event_count: events.length },
       "delivery had no matching events"
@@ -181,6 +209,8 @@ const executeDeliveryTask = async (
     newestCreatedAt(matchingEvents)
   );
 
+  incrementDeliverySent("ok");
+  observeDeliveryDuration(Date.now() - startedAt);
   taskLogger.info(
     {
       event_count: matchingEvents.length,
@@ -209,6 +239,13 @@ export const runDeliveryTask = async (
     result = await executeDeliveryTask(options, now);
   } catch (error) {
     taskError = error;
+    incrementDeliverySent("error");
+    const telegramErrorCode = getTelegramErrorCode(error);
+
+    if (telegramErrorCode !== null) {
+      incrementTelegramApiError(telegramErrorCode);
+    }
+
     logger.error(
       { err: error, subscription_id: options.subscriptionId },
       "delivery failed"

@@ -22,7 +22,7 @@ const primaryButtonLabels = new Set([
   "👁 Preview now"
 ]);
 const successButtonLabels = new Set(["💾 Save", "▶️ Resume"]);
-const dangerButtonLabels = new Set(["🗑 Delete"]);
+const dangerButtonLabels = new Set(["🗑 Delete", "📣 Send broadcast"]);
 
 export const buildRootMenuText = (): string => "Subscriptions in this chat";
 

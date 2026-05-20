@@ -8,6 +8,11 @@ import type {
 } from "~/db/queries";
 import type { GitHubEventsResponse } from "~/github/client";
 import type { GitHubPublicEvent } from "~/github/types";
+import {
+  incrementEventsCollected,
+  incrementGitHubApiRequest,
+  type GitHubApiStatus
+} from "~/lib/metrics";
 
 const dayMs = 24 * 60 * 60 * 1000;
 
@@ -125,6 +130,22 @@ const getErrorStatus = (error: unknown): number | null => {
   return typeof error.status === "number" ? error.status : null;
 };
 
+const toGitHubApiStatus = (status: number | null): GitHubApiStatus => {
+  if (status === 304) {
+    return "304";
+  }
+
+  if (status !== null && status >= 400 && status < 500) {
+    return "4xx";
+  }
+
+  if (status !== null && status >= 500) {
+    return "5xx";
+  }
+
+  return "error";
+};
+
 const toStoredEvent = (
   accountId: number,
   event: GitHubPublicEvent
@@ -182,6 +203,7 @@ export const pollGitHubAccount = async (
       login: account.login,
       etag: account.etag
     });
+    incrementGitHubApiRequest("200");
     const etag = response.headers.etag ?? account.etag;
     const newestEventId = response.data[0]?.id ?? account.lastEventId;
     const newEvents = getEventsNewerThanCursor(response.data, account.lastEventId)
@@ -189,6 +211,10 @@ export const pollGitHubAccount = async (
       .filter((event): event is StoredGitHubEventInput => event !== null);
 
     await store.insertEvents(newEvents);
+    for (const event of newEvents) {
+      incrementEventsCollected(event.type);
+    }
+
     await store.markAccountPollSucceeded({
       accountId: account.id,
       etag,
@@ -206,6 +232,7 @@ export const pollGitHubAccount = async (
     };
   } catch (error) {
     const failureStatus = getErrorStatus(error);
+    incrementGitHubApiRequest(toGitHubApiStatus(failureStatus));
 
     if (failureStatus === 304) {
       const etag = getHeaderEtag(error) ?? account.etag;
