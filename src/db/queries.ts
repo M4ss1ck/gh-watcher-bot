@@ -7,9 +7,11 @@ import {
   events,
   githubAccounts,
   kv,
+  subscriptions,
   type ChatType,
   type GitHubEventPayload
 } from "~/db/schema";
+import type { SchedulePreset, SubscriptionPreset } from "~/db/schema";
 
 export type UpsertChatInput = {
   id: number;
@@ -63,6 +65,16 @@ export type KvWriteInput = {
   key: string;
   value: string;
   updatedAt: Date;
+};
+
+export type SubscriptionListItem = {
+  id: number;
+  accountLogin: string;
+  preset: SubscriptionPreset;
+  schedulePreset: SchedulePreset;
+  timezone: string;
+  paused: boolean;
+  lastDeliveredAt: Date | null;
 };
 
 const nowMs = sql`(unixepoch() * 1000)`;
@@ -248,4 +260,22 @@ export const countEventsForAccount = async (accountId: number): Promise<number> 
     .where(eq(events.accountId, accountId));
 
   return row?.count ?? 0;
+};
+
+export const listSubscriptionsForChat = async (
+  chatId: number
+): Promise<SubscriptionListItem[]> => {
+  return db
+    .select({
+      id: subscriptions.id,
+      accountLogin: githubAccounts.login,
+      preset: subscriptions.preset,
+      schedulePreset: subscriptions.schedulePreset,
+      timezone: subscriptions.timezone,
+      paused: subscriptions.paused,
+      lastDeliveredAt: subscriptions.lastDeliveredAt
+    })
+    .from(subscriptions)
+    .innerJoin(githubAccounts, eq(subscriptions.accountId, githubAccounts.id))
+    .where(eq(subscriptions.chatId, chatId));
 };
