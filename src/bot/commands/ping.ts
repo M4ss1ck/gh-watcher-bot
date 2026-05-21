@@ -2,6 +2,7 @@
 import type { Bot } from "grammy";
 
 import { isAdminUserId, type AdminDiagnosticsInput } from "~/bot/commands/admin";
+import { getGitHubRateLimitRemaining } from "~/github/client";
 
 export const collectorHeartbeatKey = "collector.last_tick";
 
@@ -77,9 +78,11 @@ export const registerPingCommand = (
         0
       );
 
+    const remaining = getGitHubRateLimitRemaining();
+
     await ctx.reply(
       buildPingMessage(lastTickMs, Date.now(), {
-        githubRateLimitRemaining: "unknown",
+        githubRateLimitRemaining: remaining === null ? "unknown" : String(remaining),
         activeSubscriptions: counts.activeSubscriptions,
         activeChats: counts.activeChats,
         eventsIngestedLast24h: counts.eventsIngestedLast24h,

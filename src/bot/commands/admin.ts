@@ -1,5 +1,5 @@
 // Handles admin command menu entry for configured administrators.
-import { Menu } from "@grammyjs/menu";
+import { Menu, MenuRange } from "@grammyjs/menu";
 import type { Bot, Context, NextFunction } from "grammy";
 
 import {
@@ -18,7 +18,7 @@ import type {
   AdminSubscriptionListItem
 } from "~/db/queries";
 import type { MetricsSnapshot } from "~/lib/metrics";
-import { createGitHubClient } from "~/github/client";
+import { createGitHubClient, getGitHubRateLimitRemaining } from "~/github/client";
 import { pollGitHubAccount } from "~/github/poller";
 import { logger } from "~/lib/logger";
 import { getMetricsSnapshot } from "~/lib/metrics";
@@ -165,6 +165,60 @@ const setBroadcastDraft = (key: AdminTextInputKey, text: string): void => {
   broadcastDrafts.set(keyFromParts(key), { text });
 };
 
+const adminPageSize = 20;
+const paginationOffsets = new Map<string, number>();
+
+const paginationKey = (menu: string, userId: number | undefined): string =>
+  `${menu}:${userId ?? 0}`;
+
+const getOffset = (menu: string, userId: number | undefined): number =>
+  paginationOffsets.get(paginationKey(menu, userId)) ?? 0;
+
+const setOffset = (
+  menu: string,
+  userId: number | undefined,
+  offset: number
+): void => {
+  paginationOffsets.set(paginationKey(menu, userId), Math.max(0, offset));
+};
+
+const addPaginationControls = (
+  range: MenuRange<Context>,
+  menu: string,
+  offset: number,
+  hasMore: boolean
+): void => {
+  const hasPrev = offset > 0;
+
+  if (!hasPrev && !hasMore) {
+    return;
+  }
+
+  if (hasPrev) {
+    range.text("◀️ Prev", async (ctx) => {
+      if (!(await answerAdminOnlyCallback(ctx))) {
+        return;
+      }
+
+      setOffset(menu, ctx.from?.id, offset - adminPageSize);
+      ctx.menu.update();
+    });
+  }
+
+  if (hasMore) {
+    range.text("Next ▶️", async (ctx) => {
+      if (!(await answerAdminOnlyCallback(ctx))) {
+        return;
+      }
+
+      setOffset(menu, ctx.from?.id, offset + adminPageSize);
+      ctx.menu.update();
+    });
+  }
+
+  range.row();
+};
+
 const takeBroadcastDraft = (key: AdminTextInputKey): AdminBroadcastDraft | null => {
   const mapKey = keyFromParts(key);
   const draft = broadcastDrafts.get(mapKey);
@@ -200,9 +254,11 @@ export const loadAdminDiagnosticsInput = async (): Promise<AdminDiagnosticsInput
       0
     );
 
+  const remaining = getGitHubRateLimitRemaining();
+
   return {
     lastCollectorTickAge: formatCollectorTickAge(lastTickMs),
-    githubRateLimitRemaining: "unknown",
+    githubRateLimitRemaining: remaining === null ? "unknown" : String(remaining),
     activeSubscriptions: counts.activeSubscriptions,
     activeChats: counts.activeChats,
     eventsIngestedLast24h: counts.eventsIngestedLast24h,
@@ -317,21 +373,26 @@ export const adminMenu = new Menu<Context>(adminMenuId)
   });
 
 export const adminChatsMenu = new Menu<Context>(adminChatsMenuId)
-  .dynamic(async (_ctx, range) => {
+  .dynamic(async (ctx, range) => {
     const queries = await import("~/db/queries");
-    const chats = await queries.listAdminChats();
+    const offset = getOffset("chats", ctx.from?.id);
+    const fetched = await queries.listAdminChats(adminPageSize + 1, offset);
+    const visible = fetched.slice(0, adminPageSize);
+    const hasMore = fetched.length > adminPageSize;
 
-    for (const chat of chats) {
-      range.text(formatAdminChatButton(chat), async (ctx) => {
-        if (!(await answerAdminOnlyCallback(ctx))) {
+    for (const chat of visible) {
+      range.text(formatAdminChatButton(chat), async (callbackCtx) => {
+        if (!(await answerAdminOnlyCallback(callbackCtx))) {
           return;
         }
 
-        await ctx.answerCallbackQuery({
+        await callbackCtx.answerCallbackQuery({
           text: chat.active && !chat.banned ? "active" : "inactive"
         });
       }).row();
     }
+
+    addPaginationControls(range, "chats", offset, hasMore);
 
     return range;
   })
@@ -340,21 +401,26 @@ export const adminChatsMenu = new Menu<Context>(adminChatsMenuId)
   });
 
 export const adminAccountsMenu = new Menu<Context>(adminAccountsMenuId)
-  .dynamic(async (_ctx, range) => {
+  .dynamic(async (ctx, range) => {
     const queries = await import("~/db/queries");
-    const accounts = await queries.listAdminAccounts();
+    const offset = getOffset("accounts", ctx.from?.id);
+    const fetched = await queries.listAdminAccounts(adminPageSize + 1, offset);
+    const visible = fetched.slice(0, adminPageSize);
+    const hasMore = fetched.length > adminPageSize;
 
-    for (const account of accounts) {
-      range.text(formatAdminAccountButton(account), async (ctx) => {
-        if (!(await answerAdminOnlyCallback(ctx))) {
+    for (const account of visible) {
+      range.text(formatAdminAccountButton(account), async (callbackCtx) => {
+        if (!(await answerAdminOnlyCallback(callbackCtx))) {
           return;
         }
 
-        await ctx.answerCallbackQuery({
+        await callbackCtx.answerCallbackQuery({
           text: `failures ${account.consecutiveFailures}`
         });
       }).row();
     }
+
+    addPaginationControls(range, "accounts", offset, hasMore);
 
     return range;
   })
@@ -376,20 +442,23 @@ export const adminDiagnosticsMenu = new Menu<Context>(adminDiagnosticsMenuId)
   });
 
 export const adminForcePollMenu = new Menu<Context>(adminForcePollMenuId)
-  .dynamic(async (_ctx, range) => {
+  .dynamic(async (ctx, range) => {
     const queries = await import("~/db/queries");
-    const accounts = await queries.listAdminAccounts();
+    const offset = getOffset("force-poll", ctx.from?.id);
+    const fetched = await queries.listAdminAccounts(adminPageSize + 1, offset);
+    const visible = fetched.slice(0, adminPageSize);
+    const hasMore = fetched.length > adminPageSize;
 
-    for (const account of accounts) {
-      range.text(formatAdminAccountButton(account), async (ctx) => {
-        if (!(await answerAdminOnlyCallback(ctx))) {
+    for (const account of visible) {
+      range.text(formatAdminAccountButton(account), async (callbackCtx) => {
+        if (!(await answerAdminOnlyCallback(callbackCtx))) {
           return;
         }
 
         const pollAccount = await queries.getGitHubAccountById(account.id);
 
         if (pollAccount === null) {
-          await ctx.answerCallbackQuery({ text: "Account missing." });
+          await callbackCtx.answerCallbackQuery({ text: "Account missing." });
           return;
         }
 
@@ -397,11 +466,13 @@ export const adminForcePollMenu = new Menu<Context>(adminForcePollMenuId)
           client: createGitHubClient()
         });
 
-        await ctx.reply(
+        await callbackCtx.reply(
           `Force-poll @${result.login}: ${result.status}, inserted ${result.insertedCount}`
         );
       }).row();
     }
+
+    addPaginationControls(range, "force-poll", offset, hasMore);
 
     return range;
   })
@@ -410,28 +481,33 @@ export const adminForcePollMenu = new Menu<Context>(adminForcePollMenuId)
   });
 
 export const adminForceDeliverMenu = new Menu<Context>(adminForceDeliverMenuId)
-  .dynamic(async (_ctx, range) => {
+  .dynamic(async (ctx, range) => {
     const queries = await import("~/db/queries");
-    const subscriptions = await queries.listAdminSubscriptions();
+    const offset = getOffset("force-deliver", ctx.from?.id);
+    const fetched = await queries.listAdminSubscriptions(adminPageSize + 1, offset);
+    const visible = fetched.slice(0, adminPageSize);
+    const hasMore = fetched.length > adminPageSize;
 
-    for (const subscription of subscriptions) {
-      range.text(formatAdminSubscriptionButton(subscription), async (ctx) => {
-        if (!(await answerAdminOnlyCallback(ctx))) {
+    for (const subscription of visible) {
+      range.text(formatAdminSubscriptionButton(subscription), async (callbackCtx) => {
+        if (!(await answerAdminOnlyCallback(callbackCtx))) {
           return;
         }
 
         const result = await runDeliveryTask({
           subscriptionId: subscription.id,
           sendMessage: async (chatId, text) => {
-            await ctx.api.sendMessage(chatId, text);
+            await callbackCtx.api.sendMessage(chatId, text);
           }
         });
 
-        await ctx.reply(
+        await callbackCtx.reply(
           `Force-deliver #${subscription.id}: ${result.status}, events ${result.eventCount}`
         );
       }).row();
     }
+
+    addPaginationControls(range, "force-deliver", offset, hasMore);
 
     return range;
   })

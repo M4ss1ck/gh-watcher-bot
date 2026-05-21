@@ -14,6 +14,19 @@ import { logger } from "~/lib/logger";
 
 const OctokitWithPlugins = Octokit.plugin(retry, throttling);
 
+let rateLimitRemaining: number | null = null;
+
+export const getGitHubRateLimitRemaining = (): number | null => rateLimitRemaining;
+
+const recordRateLimitRemaining = (headers: Record<string, unknown>): void => {
+  const raw = headers["x-ratelimit-remaining"];
+  const value = typeof raw === "string" ? Number(raw) : null;
+
+  if (value !== null && Number.isFinite(value)) {
+    rateLimitRemaining = value;
+  }
+};
+
 export type GitHubEventsResponse = {
   status: 200;
   headers: {
@@ -55,6 +68,7 @@ export const createGitHubClient = (): GitHubApiClient => {
         username: login,
         headers: etag === null ? undefined : { "If-None-Match": etag }
       });
+      recordRateLimitRemaining(response.headers);
 
       return {
         status: 200,
@@ -71,6 +85,7 @@ export const createGitHubClient = (): GitHubApiClient => {
       const response = await octokit.request("GET /users/{username}", {
         username: login
       });
+      recordRateLimitRemaining(response.headers);
 
       return parseGitHubUserSummary(response.data);
     }
