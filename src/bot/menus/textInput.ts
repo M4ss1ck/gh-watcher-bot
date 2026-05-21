@@ -10,6 +10,8 @@ export type TextInputValue = {
   waitingFor: TextInputKind;
 };
 
+export const channelPostUserId = 0;
+
 type Entry = TextInputValue & {
   expiresAt: number;
 };

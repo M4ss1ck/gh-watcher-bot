@@ -177,6 +177,44 @@ describe("/subscribe eager creation", () => {
     });
   });
 
+  test("creates a channel subscription when the command comes from a channel post", async () => {
+    const { getSelectedSubscription } = await import("~/bot/menus/state");
+    const { registerSubscribeCommand } = await import("~/bot/commands/subscribe");
+    const replies: string[] = [];
+
+    registerSubscribeCommand(createBot());
+
+    await commandHandler?.({
+      match: "@octocat",
+      chat: { id: -100123, type: "channel", title: "Release feed" },
+      channelPost: {
+        message_id: 10,
+        date: 1,
+        chat: { id: -100123, type: "channel", title: "Release feed" },
+        text: "/subscribe @octocat"
+      },
+      reply: async (text: string) => {
+        replies.push(text);
+
+        return {} as never;
+      }
+    } as unknown as Context & { match?: string });
+
+    expect(createdSubscription).toEqual({
+      chatId: -100123,
+      accountId: 583231,
+      preset: "firehose",
+      filters: clonePresetFilters("firehose"),
+      schedulePreset: "hourly",
+      timezone: "UTC",
+      selectedRepos: null,
+      createdByUserId: 0,
+      lastDeliveredAt: null
+    });
+    expect(getSelectedSubscription({ chatId: -100123, userId: 0 })).toBeNull();
+    expect(replies).toContain("Subscriptions in this chat");
+  });
+
   test("keeps an existing all-repos owner subscription broad for repo targets", async () => {
     const { registerSubscribeCommand } = await import("~/bot/commands/subscribe");
     existingSubscriptions = [

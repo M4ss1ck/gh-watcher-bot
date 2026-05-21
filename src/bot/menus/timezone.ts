@@ -13,7 +13,7 @@ import {
   getSelectedSubscription,
   updateSelectedSubscription
 } from "~/bot/menus/state";
-import { textInputs } from "~/bot/menus/textInput";
+import { channelPostUserId, textInputs } from "~/bot/menus/textInput";
 import { requireChatAdminCallback } from "~/bot/middleware/chatAdminOnly";
 import { updateSubscriptionSchedule } from "~/db/queries";
 import { logger } from "~/lib/logger";
@@ -106,6 +106,15 @@ export const timezoneMenu = new Menu<Context>(timezoneMenuId)
     }
 
     textInputs.set(key, { waitingFor: "timezone" });
+    if (ctx.chat?.type === "channel") {
+      textInputs.set(
+        {
+          chatId: key.chatId,
+          userId: channelPostUserId
+        },
+        { waitingFor: "timezone" }
+      );
+    }
     await ctx.reply("Send an IANA timezone within 60 seconds.");
   })
   .row()

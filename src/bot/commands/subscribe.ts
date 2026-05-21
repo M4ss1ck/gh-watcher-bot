@@ -9,7 +9,11 @@ import {
 } from "~/bot/menus/root";
 import { subscriptionMenu } from "~/bot/menus/subscription";
 import { isSupportedTimezone } from "~/bot/menus/timezone";
-import { textInputs, TextInputTtlMap } from "~/bot/menus/textInput";
+import {
+  channelPostUserId,
+  textInputs,
+  TextInputTtlMap
+} from "~/bot/menus/textInput";
 import { setSelectedSubscription, updateSelectedSubscription } from "~/bot/menus/state";
 import { chatAdminOnly } from "~/bot/middleware/chatAdminOnly";
 import {
@@ -25,6 +29,12 @@ import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
 
 export { TextInputTtlMap };
+
+type CommandScope = {
+  chatId: number;
+  userId: number;
+  keepMenuState: boolean;
+};
 
 export const normalizeGitHubLogin = (value: string): string | null => {
   const login = value.trim().replace(/^@/, "");
@@ -114,6 +124,30 @@ export const parseSubscribeTarget = (value: string): SubscribeTarget | null => {
 const getCommandArgument = (ctx: Context & { match?: string }): string =>
   typeof ctx.match === "string" ? ctx.match.trim() : "";
 
+const commandScopeFromContext = (ctx: Context): CommandScope | null => {
+  if (ctx.chat === undefined) {
+    return null;
+  }
+
+  if (ctx.from !== undefined) {
+    return {
+      chatId: ctx.chat.id,
+      userId: ctx.from.id,
+      keepMenuState: true
+    };
+  }
+
+  if (ctx.chat.type === "channel" && ctx.channelPost !== undefined) {
+    return {
+      chatId: ctx.chat.id,
+      userId: channelPostUserId,
+      keepMenuState: false
+    };
+  }
+
+  return null;
+};
+
 const syncDeliverer = async (): Promise<void> => {
   const deliverer = getDeliverer();
 
@@ -132,9 +166,9 @@ const openSubscriptionForUsername = async (
   ctx: Context,
   target: SubscribeTarget
 ): Promise<void> => {
-  const key = menuKeyFromContext(ctx);
+  const scope = commandScopeFromContext(ctx);
 
-  if (key === null) {
+  if (scope === null) {
     await ctx.reply("Open this command from a chat.");
     return;
   }
@@ -147,7 +181,7 @@ const openSubscriptionForUsername = async (
   }
 
   try {
-    const existing = await listSubscriptionsForChat(key.chatId);
+    const existing = await listSubscriptionsForChat(scope.chatId);
     const ownerLogin = target.type === "account" ? target.login : target.owner;
     const account = await resolveOrCreateGitHubAccount(ownerLogin, client);
     const alreadyHasAccount = existing.some(
@@ -176,14 +210,14 @@ const openSubscriptionForUsername = async (
           });
 
     const id = await createOrUpdateSubscription({
-      chatId: key.chatId,
+      chatId: scope.chatId,
       accountId: account.id,
       preset: "firehose",
       filters: clonePresetFilters("firehose"),
       schedulePreset: "hourly",
       timezone: "UTC",
       selectedRepos,
-      createdByUserId: key.userId,
+      createdByUserId: scope.userId,
       lastDeliveredAt: null
     });
     const state = {
@@ -198,12 +232,29 @@ const openSubscriptionForUsername = async (
       lastDeliveredAt: null
     };
 
-    setSelectedSubscription(key, state);
+    if (scope.keepMenuState) {
+      setSelectedSubscription(
+        {
+          chatId: scope.chatId,
+          userId: scope.userId
+        },
+        state
+      );
+    }
+
     await syncDeliverer();
 
     await ctx.reply(renderAccountSummary(account, state));
-    await ctx.reply(buildSubscriptionMenuTextFromState(state), {
-      reply_markup: subscriptionMenu
+
+    if (scope.keepMenuState) {
+      await ctx.reply(buildSubscriptionMenuTextFromState(state), {
+        reply_markup: subscriptionMenu
+      });
+      return;
+    }
+
+    await ctx.reply(buildRootMenuText(), {
+      reply_markup: rootMenu
     });
   } catch (error) {
     const label =
@@ -283,19 +334,32 @@ const handleTextInput = async (
   ctx: Context,
   next: NextFunction
 ): Promise<void> => {
-  if (ctx.message?.text === undefined || ctx.chat === undefined || ctx.from === undefined) {
+  const text = ctx.msg?.text;
+
+  if (text === undefined || ctx.chat === undefined) {
     await next();
     return;
   }
 
-  if (ctx.message.text.startsWith("/")) {
+  if (text.startsWith("/")) {
+    await next();
+    return;
+  }
+
+  const userId =
+    ctx.from?.id ??
+    (ctx.chat.type === "channel" && ctx.channelPost !== undefined
+      ? channelPostUserId
+      : null);
+
+  if (userId === null) {
     await next();
     return;
   }
 
   const key = {
     chatId: ctx.chat.id,
-    userId: ctx.from.id
+    userId
   };
   const waiting = textInputs.take(key);
 
@@ -305,7 +369,7 @@ const handleTextInput = async (
   }
 
   if (waiting.waitingFor === "username") {
-    const target = parseSubscribeTarget(ctx.message.text);
+    const target = parseSubscribeTarget(text);
 
     if (target === null) {
       await ctx.reply("That does not look like a GitHub username.");
@@ -316,7 +380,7 @@ const handleTextInput = async (
     return;
   }
 
-  const timezone = ctx.message.text.trim();
+  const timezone = text.trim();
 
   if (!isSupportedTimezone(timezone)) {
     await ctx.reply("That does not look like a valid IANA timezone.");
@@ -338,7 +402,7 @@ const handleTextInput = async (
 };
 
 export const registerSubscribeCommand = (bot: Bot): void => {
-  bot.on("message:text", handleTextInput);
+  bot.on("msg:text", handleTextInput);
 
   bot.command("subscribe", chatAdminOnly, async (ctx) => {
     const argument = getCommandArgument(ctx);

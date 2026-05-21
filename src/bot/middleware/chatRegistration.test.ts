@@ -1,6 +1,7 @@
 // Verifies chat lifecycle state decisions before database writes.
 import { describe, expect, mock, test } from "bun:test";
 
+import { chatAdminOnly } from "~/bot/middleware/chatAdminOnly";
 import {
   handleChatMemberStatusChange,
   registerChatFromInteraction
@@ -71,5 +72,33 @@ describe("chat registration middleware helpers", () => {
 
     expect(upsertChat).not.toHaveBeenCalled();
     expect(setChatActive).toHaveBeenCalledWith(-1003, false);
+  });
+
+  test("allows channel post commands without a from user", async () => {
+    let nextCalled = false;
+    const replies: string[] = [];
+
+    await chatAdminOnly(
+      {
+        chat: { id: -1004, type: "channel", title: "Releases" },
+        channelPost: {
+          message_id: 10,
+          date: 1,
+          chat: { id: -1004, type: "channel", title: "Releases" },
+          text: "/subscribe octocat"
+        },
+        reply: async (text: string) => {
+          replies.push(text);
+
+          return {} as never;
+        }
+      } as never,
+      async () => {
+        nextCalled = true;
+      }
+    );
+
+    expect(nextCalled).toBe(true);
+    expect(replies).toEqual([]);
   });
 });

@@ -54,6 +54,10 @@ export const isChatAdminContext = async (ctx: Context): Promise<boolean> => {
   }
 
   if (ctx.chat === undefined || ctx.from === undefined) {
+    if (ctx.chat?.type === "channel" && ctx.channelPost !== undefined) {
+      return true;
+    }
+
     return false;
   }
 
@@ -84,6 +88,11 @@ export const chatAdminOnly: MiddlewareFn<Context> = async (ctx, next) => {
   }
 
   if (ctx.chat === undefined || ctx.from === undefined) {
+    if (ctx.chat?.type === "channel" && ctx.channelPost !== undefined) {
+      await next();
+      return;
+    }
+
     await ctx.reply("Open this from a chat.");
     return;
   }

@@ -10,7 +10,7 @@ import {
   type MenuKey,
   type SubscriptionMenuState
 } from "~/bot/menus/state";
-import { textInputs } from "~/bot/menus/textInput";
+import { channelPostUserId, textInputs } from "~/bot/menus/textInput";
 
 type StyledButton = {
   text?: unknown;
@@ -57,7 +57,7 @@ const setSelectionFromListItem = (ctx: Context, item: SubscriptionListItem): voi
     return;
   }
 
-  setSelectedSubscription(key, {
+  const state = {
     id: item.id,
     accountId: item.accountId,
     accountLogin: item.accountLogin,
@@ -67,7 +67,19 @@ const setSelectionFromListItem = (ctx: Context, item: SubscriptionListItem): voi
     selectedRepos: item.selectedRepos,
     paused: item.paused,
     lastDeliveredAt: item.lastDeliveredAt
-  });
+  };
+
+  setSelectedSubscription(key, state);
+
+  if (ctx.chat?.type === "channel") {
+    setSelectedSubscription(
+      {
+        chatId: key.chatId,
+        userId: channelPostUserId
+      },
+      state
+    );
+  }
 };
 
 export const applyMenuButtonStyles = (payload: unknown): void => {
@@ -164,6 +176,15 @@ export const rootMenu = new Menu<Context>(rootMenuId)
     }
 
     textInputs.set(key, { waitingFor: "username" });
+    if (ctx.chat?.type === "channel") {
+      textInputs.set(
+        {
+          chatId: key.chatId,
+          userId: channelPostUserId
+        },
+        { waitingFor: "username" }
+      );
+    }
     await ctx.reply("Send the GitHub username to watch within 60 seconds.");
   });
 
