@@ -96,6 +96,7 @@ const openSubscriptionForUsername = async (
     });
     const state = {
       id,
+      accountId: account.id,
       accountLogin: account.login,
       preset: "firehose" as const,
       schedulePreset: "hourly" as const,

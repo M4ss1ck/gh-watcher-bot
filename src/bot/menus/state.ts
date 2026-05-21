@@ -13,6 +13,7 @@ export type MenuKey = {
 
 export type SubscriptionMenuState = {
   id: number;
+  accountId: number;
   accountLogin: string;
   preset: SubscriptionPreset;
   schedulePreset: SchedulePreset;

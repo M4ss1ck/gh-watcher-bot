@@ -2,7 +2,7 @@
 import { Menu } from "@grammyjs/menu";
 import type { Context } from "grammy";
 
-import { getDeliverer } from "~/bot/menus/deps";
+import { getDeliverer, getGitHubClient } from "~/bot/menus/deps";
 import {
   filtersMenuId,
   rootMenuId,
@@ -23,10 +23,41 @@ import {
 import { requireChatAdminCallback } from "~/bot/middleware/chatAdminOnly";
 import {
   deleteSubscription,
+  getGitHubAccountById,
   setSubscriptionPaused
 } from "~/db/queries";
+import type { GitHubAccountForPolling } from "~/db/queries";
+import {
+  pollGitHubAccount,
+  type GitHubEventsClient,
+  type PollResult
+} from "~/github/poller";
 import { logger } from "~/lib/logger";
-import { runDeliveryTask } from "~/scheduler/deliverer";
+import {
+  runDeliveryTask,
+  type DeliverySendMessage,
+  type DeliveryTaskResult
+} from "~/scheduler/deliverer";
+
+type PreviewDeliver = (options: {
+  subscriptionId: number;
+  sendMessage: DeliverySendMessage;
+}) => Promise<DeliveryTaskResult>;
+
+export type SubscriptionPreviewOptions = {
+  subscriptionId: number;
+  accountId: number;
+  accountLogin: string;
+  client?: GitHubEventsClient | null;
+  getAccountById?: (accountId: number) => Promise<GitHubAccountForPolling | null>;
+  pollAccount?: (
+    account: GitHubAccountForPolling,
+    options: { client: GitHubEventsClient }
+  ) => Promise<PollResult>;
+  deliver?: PreviewDeliver;
+  sendMessage: DeliverySendMessage;
+  reply: (text: string) => Promise<void>;
+};
 
 export const buildSubscriptionMenuText = (ctx: Context): string => {
   const key = menuKeyFromContext(ctx);
@@ -55,6 +86,70 @@ const syncDeliverer = async (): Promise<void> => {
   } catch (error) {
     logger.error({ err: error }, "deliverer sync failed");
   }
+};
+
+const formatGitHubMention = (login: string): string => `@${login.replace(/^@+/, "")}`;
+
+const formatPollFailureMessage = (
+  accountLogin: string,
+  result: Extract<PollResult, { status: "failed" }>
+): string => {
+  const suffix =
+    result.failureStatus === null
+      ? "GitHub could not be reached."
+      : `GitHub returned ${result.failureStatus}.`;
+
+  return `Could not refresh ${formatGitHubMention(accountLogin)} before preview. ${suffix}`;
+};
+
+export const runSubscriptionPreview = async (
+  options: SubscriptionPreviewOptions
+): Promise<DeliveryTaskResult | null> => {
+  const client = options.client ?? getGitHubClient();
+
+  if (client === null) {
+    await options.reply("GitHub client unavailable. Try again later.");
+    return null;
+  }
+
+  const getAccountById = options.getAccountById ?? getGitHubAccountById;
+  const account = await getAccountById(options.accountId);
+
+  if (account === null) {
+    await options.reply(
+      `GitHub account ${formatGitHubMention(options.accountLogin)} is missing. Open /subscribe again.`
+    );
+    return null;
+  }
+
+  const pollAccount = options.pollAccount ?? pollGitHubAccount;
+  const pollResult = await pollAccount(account, { client });
+
+  if (pollResult.status === "failed") {
+    await options.reply(formatPollFailureMessage(options.accountLogin, pollResult));
+    return null;
+  }
+
+  if (pollResult.status === "skipped_paused") {
+    await options.reply(
+      `GitHub polling for ${formatGitHubMention(options.accountLogin)} is paused until ${pollResult.pausedUntil.toISOString()}.`
+    );
+    return null;
+  }
+
+  const deliver = options.deliver ?? runDeliveryTask;
+  const result = await deliver({
+    subscriptionId: options.subscriptionId,
+    sendMessage: options.sendMessage
+  });
+
+  if (result.status === "empty") {
+    await options.reply(
+      `No new events for ${formatGitHubMention(options.accountLogin)} since last delivery. The collector polls every 10 min.`
+    );
+  }
+
+  return result;
 };
 
 export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
@@ -110,17 +205,21 @@ export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
     }
 
     try {
-      const result = await runDeliveryTask({
+      await runSubscriptionPreview({
         subscriptionId: state.id,
+        accountId: state.accountId,
+        accountLogin: state.accountLogin,
         sendMessage: async (chatId, text) => {
           await ctx.api.sendMessage(chatId, text);
+        },
+        reply: async (text) => {
+          await ctx.reply(text);
         }
       });
-      await ctx.answerCallbackQuery({
-        text: `Preview ${result.status}, events ${result.eventCount}.`
-      });
+      await ctx.answerCallbackQuery();
     } catch (error) {
       logger.error({ err: error, subscription_id: state.id }, "preview failed");
+      await ctx.reply("Preview failed. Try again later.");
       await ctx.answerCallbackQuery({ text: "Preview failed." });
     }
   })

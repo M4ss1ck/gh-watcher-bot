@@ -95,6 +95,7 @@ describe("/subscribe eager creation", () => {
     });
     expect(getSelectedSubscription({ chatId: 123, userId: 456 })).toEqual({
       id: 91,
+      accountId: 583231,
       accountLogin: "octocat",
       preset: "firehose",
       schedulePreset: "hourly",

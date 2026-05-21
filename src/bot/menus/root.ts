@@ -58,6 +58,7 @@ const setSelectionFromListItem = (ctx: Context, item: SubscriptionListItem): voi
 
   setSelectedSubscription(key, {
     id: item.id,
+    accountId: item.accountId,
     accountLogin: item.accountLogin,
     preset: item.preset,
     schedulePreset: item.schedulePreset,
@@ -137,6 +138,7 @@ export const rootMenu = new Menu<Context>(rootMenuId)
           setSelectionFromListItem(menuCtx, item);
           await menuCtx.editMessageText(buildSubscriptionMenuTextFromState({
             id: item.id,
+            accountId: item.accountId,
             accountLogin: item.accountLogin,
             preset: item.preset,
             schedulePreset: item.schedulePreset,

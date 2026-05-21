@@ -83,6 +83,7 @@ export type CreateOrUpdateSubscriptionInput = {
 
 export type SubscriptionListItem = {
   id: number;
+  accountId: number;
   accountLogin: string;
   preset: SubscriptionPreset;
   schedulePreset: SchedulePreset;
@@ -339,6 +340,7 @@ export const listSubscriptionsForChat = async (
   return db
     .select({
       id: subscriptions.id,
+      accountId: githubAccounts.id,
       accountLogin: githubAccounts.login,
       preset: subscriptions.preset,
       schedulePreset: subscriptions.schedulePreset,

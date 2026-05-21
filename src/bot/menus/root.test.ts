@@ -18,6 +18,7 @@ describe("subscription root menu helpers", () => {
     expect(
       formatSubscriptionListButton({
         id: 10,
+        accountId: 1026,
         accountLogin: "torvalds",
         preset: "releases_only",
         schedulePreset: "daily_09",
