@@ -13,6 +13,7 @@ import {
   type SubscriptionFilters
 } from "~/db/schema";
 import type { SchedulePreset, SubscriptionPreset } from "~/db/schema";
+import type { GitHubApiClient } from "~/github/client";
 import type { StoredEvent } from "~/github/types";
 
 export type UpsertChatInput = {
@@ -216,6 +217,16 @@ export const upsertGitHubAccount = async (
     });
 };
 
+export const resolveOrCreateGitHubAccount = async (
+  login: string,
+  client: Pick<GitHubApiClient, "getUser">
+): Promise<{ id: number; login: string }> => {
+  const user = await client.getUser(login);
+  await upsertGitHubAccount({ id: user.id, login: user.login });
+
+  return { id: user.id, login: user.login };
+};
+
 export const getGitHubAccountByLogin = async (
   login: string
 ): Promise<GitHubAccountForPolling | null> => {
@@ -373,6 +384,53 @@ export const createOrUpdateSubscription = async (
   }
 
   return row.id;
+};
+
+export const deleteSubscription = async (id: number): Promise<void> => {
+  await db.delete(subscriptions).where(eq(subscriptions.id, id));
+};
+
+export const setSubscriptionPaused = async (
+  id: number,
+  paused: boolean
+): Promise<void> => {
+  await db
+    .update(subscriptions)
+    .set({ paused })
+    .where(eq(subscriptions.id, id));
+};
+
+export const countSubscriptionsForChat = async (
+  chatId: number
+): Promise<number> => {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(subscriptions)
+    .where(eq(subscriptions.chatId, chatId));
+
+  return row?.count ?? 0;
+};
+
+export const updateSubscriptionFilters = async (
+  id: number,
+  filters: SubscriptionFilters,
+  preset: SubscriptionPreset
+): Promise<void> => {
+  await db
+    .update(subscriptions)
+    .set({ filters, preset })
+    .where(eq(subscriptions.id, id));
+};
+
+export const updateSubscriptionSchedule = async (
+  id: number,
+  schedulePreset: SchedulePreset,
+  timezone: string
+): Promise<void> => {
+  await db
+    .update(subscriptions)
+    .set({ schedulePreset, timezone })
+    .where(eq(subscriptions.id, id));
 };
 
 export const listActiveSubscriptionSchedules = async (): Promise<
