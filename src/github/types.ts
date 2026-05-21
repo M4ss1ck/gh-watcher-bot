@@ -17,6 +17,11 @@ export type GitHubPublicEvent = {
 export type GitHubUserSummary = {
   id: number;
   login: string;
+  name: string | null;
+  bio: string | null;
+  publicRepos: number;
+  followers: number;
+  htmlUrl: string;
 };
 
 export type StoredEvent = {
@@ -67,12 +72,25 @@ export const parseGitHubUserSummary = (value: unknown): GitHubUserSummary => {
     throw new Error("GitHub user response was not an object");
   }
 
-  if (typeof value.id !== "number" || typeof value.login !== "string") {
-    throw new Error("GitHub user response did not include id and login");
+  if (
+    typeof value.id !== "number" ||
+    typeof value.login !== "string" ||
+    !(typeof value.name === "string" || value.name === null) ||
+    !(typeof value.bio === "string" || value.bio === null) ||
+    typeof value.public_repos !== "number" ||
+    typeof value.followers !== "number" ||
+    typeof value.html_url !== "string"
+  ) {
+    throw new Error("GitHub user response did not include required summary fields");
   }
 
   return {
     id: value.id,
-    login: value.login
+    login: value.login,
+    name: value.name,
+    bio: value.bio,
+    publicRepos: value.public_repos,
+    followers: value.followers,
+    htmlUrl: value.html_url
   };
 };

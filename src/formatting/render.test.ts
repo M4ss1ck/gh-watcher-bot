@@ -1,7 +1,7 @@
 // Verifies Telegram HTML rendering for event digests.
 import { describe, expect, test } from "bun:test";
 
-import { renderEventDigest } from "~/formatting/render";
+import { renderAccountSummary, renderEventDigest } from "~/formatting/render";
 import { summarizeEvent } from "~/formatting/summarize";
 import {
   fixtureEvents,
@@ -50,5 +50,35 @@ describe("renderEventDigest", () => {
 
     expect(messages.length).toBeGreaterThan(1);
     expect(messages.every((message) => message.length <= 300)).toBe(true);
+  });
+});
+
+describe("renderAccountSummary", () => {
+  test("renders escaped account metadata and subscription defaults", () => {
+    expect(
+      renderAccountSummary(
+        {
+          id: 583231,
+          login: "octocat",
+          name: "The <Octocat>",
+          bio: null,
+          publicRepos: 8,
+          followers: 12_345,
+          htmlUrl: "https://github.com/octocat?tab=<overview>"
+        },
+        {
+          schedulePreset: "hourly",
+          timezone: "UTC",
+          preset: "firehose"
+        }
+      )
+    ).toBe(
+      [
+        "<b>Watching @octocat</b> · <a href=\"https://github.com/octocat?tab=&lt;overview&gt;\">profile</a>",
+        "The &lt;Octocat&gt; · 8 public repos · 12k followers",
+        "Schedule: hourly (UTC) · Preset: firehose",
+        "Tap /subscribe to manage."
+      ].join("\n")
+    );
   });
 });

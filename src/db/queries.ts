@@ -14,7 +14,7 @@ import {
 } from "~/db/schema";
 import type { SchedulePreset, SubscriptionPreset } from "~/db/schema";
 import type { GitHubApiClient } from "~/github/client";
-import type { StoredEvent } from "~/github/types";
+import type { GitHubUserSummary, StoredEvent } from "~/github/types";
 
 export type UpsertChatInput = {
   id: number;
@@ -221,11 +221,11 @@ export const upsertGitHubAccount = async (
 export const resolveOrCreateGitHubAccount = async (
   login: string,
   client: Pick<GitHubApiClient, "getUser">
-): Promise<{ id: number; login: string }> => {
+): Promise<GitHubUserSummary> => {
   const user = await client.getUser(login);
   await upsertGitHubAccount({ id: user.id, login: user.login });
 
-  return { id: user.id, login: user.login };
+  return user;
 };
 
 export const getGitHubAccountByLogin = async (

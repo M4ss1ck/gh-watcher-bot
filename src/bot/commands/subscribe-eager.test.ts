@@ -13,7 +13,12 @@ let delivererSyncCount = 0;
 const githubClient = {
   getUser: async (_login: string) => ({
     id: 583231,
-    login: "octocat"
+    login: "octocat",
+    name: "The Octocat",
+    bio: null,
+    publicRepos: 8,
+    followers: 12_345,
+    htmlUrl: "https://github.com/octocat"
   })
 };
 
@@ -36,14 +41,10 @@ mock.module("~/db/queries", () => ({
     return 91;
   },
   deleteSubscription: async () => undefined,
+  getGitHubAccountById: async () => null,
   listSubscriptionsForChat: async () => [],
   resolveOrCreateGitHubAccount: async (login: string) => {
-    const user = await githubClient.getUser(login);
-
-    return {
-      id: user.id,
-      login: user.login
-    };
+    return githubClient.getUser(login);
   },
   setKvValue: async () => undefined,
   setSubscriptionPaused: async () => undefined,
@@ -103,6 +104,14 @@ describe("/subscribe eager creation", () => {
       paused: false,
       lastDeliveredAt: null
     });
+    expect(replies).toContain(
+      [
+        "<b>Watching @octocat</b> · <a href=\"https://github.com/octocat\">profile</a>",
+        "The Octocat · 8 public repos · 12k followers",
+        "Schedule: hourly (UTC) · Preset: firehose",
+        "Tap /subscribe to manage."
+      ].join("\n")
+    );
     expect(replies).toContain(
       [
         "@octocat",

@@ -20,6 +20,7 @@ import {
   updateSubscriptionSchedule
 } from "~/db/queries";
 import { clonePresetFilters } from "~/filters/presets";
+import { renderAccountSummary } from "~/formatting/render";
 import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
 
@@ -108,6 +109,7 @@ const openSubscriptionForUsername = async (
     setSelectedSubscription(key, state);
     await syncDeliverer();
 
+    await ctx.reply(renderAccountSummary(account, state));
     await ctx.reply(buildSubscriptionMenuTextFromState(state), {
       reply_markup: subscriptionMenu
     });

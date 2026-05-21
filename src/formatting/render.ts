@@ -1,9 +1,16 @@
 // Renders event digests as Telegram HTML messages.
-import type { StoredEvent } from "~/github/types";
+import type { GitHubUserSummary, StoredEvent } from "~/github/types";
 import { summarizeEvent } from "~/formatting/summarize";
+import type { SchedulePreset, SubscriptionPreset } from "~/db/schema";
 
 export type RenderOptions = {
   maxMessageLength?: number;
+};
+
+export type AccountSummarySubscription = {
+  schedulePreset: SchedulePreset;
+  timezone: string;
+  preset: SubscriptionPreset;
 };
 
 const defaultMaxMessageLength = 3900;
@@ -16,6 +23,29 @@ export const escapeHtml = (value: string): string =>
 
 const escapeAttribute = (value: string): string =>
   escapeHtml(value).replaceAll("\"", "&quot;");
+
+const formatCompactCount = (value: number): string => {
+  if (value < 1_000) {
+    return String(value);
+  }
+
+  return `${Math.round(value / 1_000)}k`;
+};
+
+export const renderAccountSummary = (
+  summary: GitHubUserSummary,
+  subscription: AccountSummarySubscription
+): string => {
+  const displayName = summary.name ?? summary.login;
+  const repoLabel = summary.publicRepos === 1 ? "public repo" : "public repos";
+
+  return [
+    `<b>Watching @${escapeHtml(summary.login)}</b> · <a href="${escapeAttribute(summary.htmlUrl)}">profile</a>`,
+    `${escapeHtml(displayName)} · ${summary.publicRepos} ${repoLabel} · ${formatCompactCount(summary.followers)} followers`,
+    `Schedule: ${escapeHtml(subscription.schedulePreset)} (${escapeHtml(subscription.timezone)}) · Preset: ${escapeHtml(subscription.preset)}`,
+    "Tap /subscribe to manage."
+  ].join("\n");
+};
 
 const renderEvent = (event: StoredEvent): string => {
   const summary = summarizeEvent(event);
