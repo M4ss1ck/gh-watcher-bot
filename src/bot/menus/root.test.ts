@@ -25,7 +25,7 @@ describe("subscription root menu helpers", () => {
         paused: false,
         lastDeliveredAt: null
       } satisfies SubscriptionListItem)
-    ).toBe("▶️ @torvalds — releases_only, daily_09");
+    ).toBe("▶️ @torvalds · releases_only, daily_09");
   });
 
   test("builds root header text", () => {

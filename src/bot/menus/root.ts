@@ -36,7 +36,7 @@ export const formatSubscriptionListButton = (
   const status = item.paused ? "⏸" : "▶️";
   const paused = item.paused ? " (paused)" : "";
 
-  return `${status} @${item.accountLogin} — ${item.preset}, ${item.schedulePreset}${paused}`;
+  return `${status} @${item.accountLogin} · ${item.preset}, ${item.schedulePreset}${paused}`;
 };
 
 export const menuKeyFromContext = (ctx: Context): MenuKey | null => {
