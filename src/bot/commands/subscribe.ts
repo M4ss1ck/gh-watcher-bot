@@ -10,6 +10,7 @@ import { subscriptionMenu } from "~/bot/menus/subscription";
 import { isSupportedTimezone } from "~/bot/menus/timezone";
 import { textInputs, TextInputTtlMap } from "~/bot/menus/textInput";
 import { updateSelectedSubscription } from "~/bot/menus/state";
+import { chatAdminOnly } from "~/bot/middleware/chatAdminOnly";
 
 export { TextInputTtlMap };
 
@@ -97,7 +98,7 @@ const handleTextInput = async (
 export const registerSubscribeCommand = (bot: Bot): void => {
   bot.on("message:text", handleTextInput);
 
-  bot.command("subscribe", async (ctx) => {
+  bot.command("subscribe", chatAdminOnly, async (ctx) => {
     const argument = getCommandArgument(ctx);
 
     if (argument.length === 0) {

@@ -11,6 +11,7 @@ import {
   adminForcePollMenuId,
   adminMenuId
 } from "~/bot/menus/ids";
+import { adminOnly, isAdminUserId } from "~/bot/middleware/adminOnly";
 import type {
   AdminAccountListItem,
   AdminChatListItem,
@@ -19,10 +20,11 @@ import type {
 import type { MetricsSnapshot } from "~/lib/metrics";
 import { createGitHubClient } from "~/github/client";
 import { pollGitHubAccount } from "~/github/poller";
-import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
 import { getMetricsSnapshot } from "~/lib/metrics";
 import { runDeliveryTask } from "~/scheduler/deliverer";
+
+export { isAdminUserId };
 
 export type AdminDiagnosticsInput = {
   lastCollectorTickAge: string;
@@ -55,9 +57,6 @@ const adminTextInputs = new Map<string, AdminTextInput & { expiresAt: number }>(
 const broadcastDrafts = new Map<string, AdminBroadcastDraft>();
 
 const keyFromParts = (key: AdminTextInputKey): string => `${key.chatId}:${key.userId}`;
-
-export const isAdminUserId = (userId: number | undefined, adminIds = env.ADMIN_IDS): boolean =>
-  userId !== undefined && adminIds.includes(userId);
 
 export const buildAdminMenuText = (): string => "Admin";
 
@@ -210,15 +209,6 @@ export const loadAdminDiagnosticsInput = async (): Promise<AdminDiagnosticsInput
     errorsLast24h,
     metrics
   };
-};
-
-const assertAdmin = async (ctx: Context): Promise<boolean> => {
-  if (isAdminUserId(ctx.from?.id)) {
-    return true;
-  }
-
-  await ctx.reply("Admin only.");
-  return false;
 };
 
 const answerAdminOnlyCallback = async (ctx: Context): Promise<boolean> => {
@@ -494,11 +484,7 @@ export const registerAdminMenus = (): void => {
 export const registerAdminCommand = (bot: Bot): void => {
   bot.on("message:text", handleAdminTextInput);
 
-  bot.command("admin", async (ctx) => {
-    if (!(await assertAdmin(ctx))) {
-      return;
-    }
-
+  bot.command("admin", adminOnly, async (ctx) => {
     await ctx.reply(buildAdminMenuText(), {
       reply_markup: adminMenu
     });
