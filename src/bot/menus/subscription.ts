@@ -87,11 +87,6 @@ export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
         return;
       }
 
-      if (state.id === null) {
-        await ctx.answerCallbackQuery({ text: "Save the subscription first." });
-        return;
-      }
-
       const nextPaused = !state.paused;
       await setSubscriptionPaused(state.id, nextPaused);
       updateSelectedSubscription(key, { paused: nextPaused });
@@ -107,8 +102,10 @@ export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
     const key = menuKeyFromContext(ctx);
     const state = key === null ? null : getSelectedSubscription(key);
 
-    if (state === null || state.id === null) {
-      await ctx.answerCallbackQuery({ text: "Save the subscription first." });
+    if (state === null) {
+      await ctx.answerCallbackQuery({
+        text: "Subscription state lost. Open /subscribe again."
+      });
       return;
     }
 
@@ -132,8 +129,8 @@ export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
     const key = menuKeyFromContext(ctx);
     const state = key === null ? null : getSelectedSubscription(key);
 
-    if (state === null || state.id === null) {
-      await ctx.editMessageText("Save the subscription first.");
+    if (state === null) {
+      await ctx.editMessageText("Subscription state lost. Open /subscribe again.");
       return;
     }
 
@@ -155,7 +152,7 @@ export const subscriptionDeleteConfirmMenu = new Menu<Context>(
     const key = menuKeyFromContext(ctx);
     const state = key === null ? null : getSelectedSubscription(key);
 
-    if (key === null || state === null || state.id === null) {
+    if (key === null || state === null) {
       await ctx.editMessageText("Subscriptions in this chat");
       return;
     }

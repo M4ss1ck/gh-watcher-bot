@@ -2,7 +2,8 @@
 import type { Bot, Context, NextFunction } from "grammy";
 
 import { applyReposInput } from "~/bot/menus/filters";
-import { buildRootMenuText, menuKeyFromContext, openDraftSubscription } from "~/bot/menus/root";
+import { getDeliverer, getGitHubClient } from "~/bot/menus/deps";
+import { buildRootMenuText, menuKeyFromContext } from "~/bot/menus/root";
 import { rootMenu } from "~/bot/menus/root";
 import {
   buildSubscriptionMenuTextFromState
@@ -10,9 +11,17 @@ import {
 import { subscriptionMenu } from "~/bot/menus/subscription";
 import { isSupportedTimezone } from "~/bot/menus/timezone";
 import { textInputs, TextInputTtlMap } from "~/bot/menus/textInput";
-import { updateSelectedSubscription } from "~/bot/menus/state";
+import { setSelectedSubscription, updateSelectedSubscription } from "~/bot/menus/state";
 import { chatAdminOnly } from "~/bot/middleware/chatAdminOnly";
-import { updateSubscriptionSchedule } from "~/db/queries";
+import {
+  createOrUpdateSubscription,
+  listSubscriptionsForChat,
+  resolveOrCreateGitHubAccount,
+  updateSubscriptionSchedule
+} from "~/db/queries";
+import { clonePresetFilters } from "~/filters/presets";
+import { env } from "~/lib/env";
+import { logger } from "~/lib/logger";
 
 export { TextInputTtlMap };
 
@@ -29,6 +38,20 @@ export const normalizeGitHubLogin = (value: string): string | null => {
 const getCommandArgument = (ctx: Context & { match?: string }): string =>
   typeof ctx.match === "string" ? ctx.match.trim() : "";
 
+const syncDeliverer = async (): Promise<void> => {
+  const deliverer = getDeliverer();
+
+  if (deliverer === null) {
+    return;
+  }
+
+  try {
+    await deliverer.sync();
+  } catch (error) {
+    logger.error({ err: error }, "deliverer sync failed");
+  }
+};
+
 const openSubscriptionForUsername = async (
   ctx: Context,
   username: string
@@ -40,11 +63,90 @@ const openSubscriptionForUsername = async (
     return;
   }
 
-  const state = openDraftSubscription(key, username);
+  const client = getGitHubClient();
 
-  await ctx.reply(buildSubscriptionMenuTextFromState(state), {
-    reply_markup: subscriptionMenu
-  });
+  if (client === null) {
+    await ctx.reply("GitHub client unavailable. Try again later.");
+    return;
+  }
+
+  try {
+    const existing = await listSubscriptionsForChat(key.chatId);
+    const account = await resolveOrCreateGitHubAccount(username, client);
+    const alreadyHasAccount = existing.some(
+      (item) => item.accountLogin.toLowerCase() === account.login.toLowerCase()
+    );
+
+    if (!alreadyHasAccount && existing.length >= env.MAX_SUBS_PER_CHAT) {
+      await ctx.reply(
+        `This chat already has the maximum of ${env.MAX_SUBS_PER_CHAT} subscriptions.`
+      );
+      return;
+    }
+
+    const id = await createOrUpdateSubscription({
+      chatId: key.chatId,
+      accountId: account.id,
+      preset: "firehose",
+      filters: clonePresetFilters("firehose"),
+      schedulePreset: "hourly",
+      timezone: "UTC",
+      createdByUserId: key.userId,
+      lastDeliveredAt: null
+    });
+    const state = {
+      id,
+      accountLogin: account.login,
+      preset: "firehose" as const,
+      schedulePreset: "hourly" as const,
+      timezone: "UTC",
+      paused: false,
+      lastDeliveredAt: null
+    };
+
+    setSelectedSubscription(key, state);
+    await syncDeliverer();
+
+    await ctx.reply(buildSubscriptionMenuTextFromState(state), {
+      reply_markup: subscriptionMenu
+    });
+  } catch (error) {
+    logger.error({ err: error, account_login: username }, "subscription create failed");
+    await ctx.reply(formatSubscriptionCreateError(username, error));
+  }
+};
+
+const getErrorStatus = (error: unknown): number | null => {
+  if (typeof error !== "object" || error === null || !("status" in error)) {
+    return null;
+  }
+
+  const status = (error as { status: unknown }).status;
+
+  return typeof status === "number" ? status : null;
+};
+
+const getErrorMessage = (error: unknown): string | null => {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+
+  return null;
+};
+
+export const formatSubscriptionCreateError = (
+  username: string,
+  error: unknown
+): string => {
+  if (getErrorStatus(error) === 404) {
+    return `GitHub user @${username} was not found.`;
+  }
+
+  const message = getErrorMessage(error);
+
+  return message === null
+    ? `Could not create a subscription for @${username}. Try again later.`
+    : `Could not create a subscription for @${username}: ${message}`;
 };
 
 const handleTextInput = async (
@@ -99,9 +201,12 @@ const handleTextInput = async (
 
   const updated = updateSelectedSubscription(key, { timezone });
 
-  if (updated?.id != null) {
-    await updateSubscriptionSchedule(updated.id, updated.schedulePreset, timezone);
+  if (updated === null) {
+    await ctx.reply("Subscription state lost. Open /subscribe again.");
+    return;
   }
+
+  await updateSubscriptionSchedule(updated.id, updated.schedulePreset, timezone);
 
   await ctx.reply(`Timezone set to ${timezone}.`, {
     reply_markup: subscriptionMenu

@@ -65,18 +65,23 @@ export const timezoneMenu = new Menu<Context>(timezoneMenuId)
 
           const updated = updateSelectedSubscription(menuKey, { timezone });
 
-          if (updated?.id != null) {
-            try {
-              await updateSubscriptionSchedule(updated.id, updated.schedulePreset, timezone);
-              await syncDeliverer();
-            } catch (error) {
-              logger.error(
-                { err: error, subscription_id: updated.id },
-                "timezone save failed"
-              );
-              await menuCtx.answerCallbackQuery({ text: "Save failed. Try again." });
-              return;
-            }
+          if (updated === null) {
+            await menuCtx.answerCallbackQuery({
+              text: "Subscription state lost. Open /subscribe again."
+            });
+            return;
+          }
+
+          try {
+            await updateSubscriptionSchedule(updated.id, updated.schedulePreset, timezone);
+            await syncDeliverer();
+          } catch (error) {
+            logger.error(
+              { err: error, subscription_id: updated.id },
+              "timezone save failed"
+            );
+            await menuCtx.answerCallbackQuery({ text: "Save failed. Try again." });
+            return;
           }
 
           await menuCtx.editMessageText(buildSubscriptionMenuText(menuCtx), {

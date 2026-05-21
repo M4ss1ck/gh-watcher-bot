@@ -5,7 +5,6 @@ import type { Context, Transformer } from "grammy";
 import type { SubscriptionListItem } from "~/db/queries";
 import { rootMenuId, subscriptionMenuId } from "~/bot/menus/ids";
 import {
-  createDraftSubscription,
   setSelectedSubscription,
   type MenuKey,
   type SubscriptionMenuState
@@ -173,15 +172,5 @@ export const buildSubscriptionMenuTextFromState = (
   `Status: ${state.paused ? "paused" : "active"}`,
   `Last delivery: ${state.lastDeliveredAt === null ? "never" : state.lastDeliveredAt.toISOString()}`
 ].join("\n");
-
-export const openDraftSubscription = (
-  key: MenuKey,
-  username: string
-): SubscriptionMenuState => {
-  const state = createDraftSubscription(username);
-  setSelectedSubscription(key, state);
-
-  return state;
-};
 
 export const createStaticRange = (): MenuRange<Context> => new MenuRange<Context>();

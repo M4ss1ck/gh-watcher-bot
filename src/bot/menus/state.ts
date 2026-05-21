@@ -12,7 +12,7 @@ export type MenuKey = {
 };
 
 export type SubscriptionMenuState = {
-  id: number | null;
+  id: number;
   accountLogin: string;
   preset: SubscriptionPreset;
   schedulePreset: SchedulePreset;
@@ -62,18 +62,6 @@ export const updateSelectedSubscription = (
 
   return next;
 };
-
-export const createDraftSubscription = (
-  accountLogin: string
-): SubscriptionMenuState => ({
-  id: null,
-  accountLogin,
-  preset: "firehose",
-  schedulePreset: "hourly",
-  timezone: "UTC",
-  paused: false,
-  lastDeliveredAt: null
-});
 
 export const getFilterDraft = (key: MenuKey): FilterDraft => {
   const id = menuKey(key);

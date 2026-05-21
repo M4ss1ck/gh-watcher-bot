@@ -67,15 +67,20 @@ export const scheduleMenu = new Menu<Context>(scheduleMenuId)
     const key = menuKeyFromContext(ctx);
     const state = key === null ? null : getSelectedSubscription(key);
 
-    if (state?.id != null) {
-      try {
-        await updateSubscriptionSchedule(state.id, state.schedulePreset, state.timezone);
-        await syncDeliverer();
-      } catch (error) {
-        logger.error({ err: error, subscription_id: state.id }, "schedule save failed");
-        await ctx.answerCallbackQuery({ text: "Save failed. Try again." });
-        return;
-      }
+    if (state === null) {
+      await ctx.answerCallbackQuery({
+        text: "Subscription state lost. Open /subscribe again."
+      });
+      return;
+    }
+
+    try {
+      await updateSubscriptionSchedule(state.id, state.schedulePreset, state.timezone);
+      await syncDeliverer();
+    } catch (error) {
+      logger.error({ err: error, subscription_id: state.id }, "schedule save failed");
+      await ctx.answerCallbackQuery({ text: "Save failed. Try again." });
+      return;
     }
 
     await ctx.editMessageText(buildSubscriptionMenuText(ctx), {

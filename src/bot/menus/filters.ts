@@ -4,7 +4,7 @@ import type { Context } from "grammy";
 
 import { filterEventValues, type FilterEvent } from "~/db/schema";
 import { clonePresetFilters } from "~/filters/presets";
-import { getDeliverer, getGitHubClient } from "~/bot/menus/deps";
+import { getDeliverer } from "~/bot/menus/deps";
 import { filtersMenuId, subscriptionMenuId } from "~/bot/menus/ids";
 import {
   buildSubscriptionMenuText,
@@ -17,19 +17,11 @@ import {
   getSelectedSubscription,
   setFilterDraft,
   updateSelectedSubscription,
-  type MenuKey,
-  type SubscriptionMenuState
+  type MenuKey
 } from "~/bot/menus/state";
 import { textInputs } from "~/bot/menus/textInput";
 import { requireChatAdminCallback } from "~/bot/middleware/chatAdminOnly";
-import {
-  countSubscriptionsForChat,
-  createOrUpdateSubscription,
-  listSubscriptionsForChat,
-  resolveOrCreateGitHubAccount,
-  updateSubscriptionFilters
-} from "~/db/queries";
-import { env } from "~/lib/env";
+import { updateSubscriptionFilters } from "~/db/queries";
 import { logger } from "~/lib/logger";
 
 const eventRows: FilterEvent[][] = [
@@ -87,42 +79,6 @@ const syncDeliverer = async (): Promise<void> => {
   }
 };
 
-const persistNewSubscription = async (
-  key: MenuKey,
-  state: SubscriptionMenuState
-): Promise<{ ok: true; id: number } | { ok: false; reason: string }> => {
-  const client = getGitHubClient();
-
-  if (client === null) {
-    return { ok: false, reason: "GitHub client unavailable. Try again later." };
-  }
-
-  const existing = await listSubscriptionsForChat(key.chatId);
-  const account = await resolveOrCreateGitHubAccount(state.accountLogin, client);
-  const alreadyHasAccount = existing.some((item) => item.accountLogin === account.login);
-
-  if (!alreadyHasAccount && existing.length >= env.MAX_SUBS_PER_CHAT) {
-    return {
-      ok: false,
-      reason: `This chat already has the maximum of ${env.MAX_SUBS_PER_CHAT} subscriptions.`
-    };
-  }
-
-  const draft = getFilterDraft(key);
-  const id = await createOrUpdateSubscription({
-    chatId: key.chatId,
-    accountId: account.id,
-    preset: draft.preset,
-    filters: draft.filters,
-    schedulePreset: state.schedulePreset,
-    timezone: state.timezone,
-    createdByUserId: key.userId,
-    lastDeliveredAt: null
-  });
-
-  return { ok: true, id };
-};
-
 const saveFilters = async (ctx: Context): Promise<void> => {
   const key = menuKeyFromContext(ctx);
 
@@ -142,19 +98,8 @@ const saveFilters = async (ctx: Context): Promise<void> => {
   }
 
   try {
-    if (current.id !== null) {
-      await updateSubscriptionFilters(current.id, draft.filters, draft.preset);
-      updateSelectedSubscription(key, { preset: draft.preset });
-    } else {
-      const result = await persistNewSubscription(key, current);
-
-      if (!result.ok) {
-        await ctx.answerCallbackQuery({ text: result.reason });
-        return;
-      }
-
-      updateSelectedSubscription(key, { id: result.id, preset: draft.preset });
-    }
+    await updateSubscriptionFilters(current.id, draft.filters, draft.preset);
+    updateSelectedSubscription(key, { preset: draft.preset });
   } catch (error) {
     logger.error({ err: error, subscription_id: current.id }, "filter save failed");
     await ctx.answerCallbackQuery({ text: "Save failed. Try again." });
