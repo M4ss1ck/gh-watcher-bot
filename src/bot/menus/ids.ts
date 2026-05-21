@@ -2,6 +2,7 @@
 export const rootMenuId = "subscribe-root";
 export const subscriptionMenuId = "subscription-detail";
 export const subscriptionDeleteConfirmMenuId = "subscription-delete-confirm";
+export const presetMenuId = "subscription-preset";
 export const filtersMenuId = "subscription-filters";
 export const reposMenuId = "subscription-repos";
 export const scheduleMenuId = "subscription-schedule";

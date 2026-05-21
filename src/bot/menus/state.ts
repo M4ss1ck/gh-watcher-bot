@@ -28,8 +28,11 @@ export type FilterDraft = {
   filters: SubscriptionFilters;
 };
 
+export type SavedSubscriptionPreset = Exclude<SubscriptionPreset, "custom">;
+
 const selections = new Map<string, SubscriptionMenuState>();
 const filterDrafts = new Map<string, FilterDraft>();
+const presetDrafts = new Map<string, SavedSubscriptionPreset>();
 const repoDrafts = new Map<string, string[] | null>();
 
 export const menuKey = (key: MenuKey): string => `${key.chatId}:${key.userId}`;
@@ -48,6 +51,7 @@ export const getSelectedSubscription = (
 export const clearSelectedSubscription = (key: MenuKey): void => {
   selections.delete(menuKey(key));
   filterDrafts.delete(menuKey(key));
+  presetDrafts.delete(menuKey(key));
   repoDrafts.delete(menuKey(key));
 };
 
@@ -94,6 +98,33 @@ export const setFilterDraft = (key: MenuKey, draft: FilterDraft): void => {
 
 export const clearFilterDraft = (key: MenuKey): void => {
   filterDrafts.delete(menuKey(key));
+};
+
+export const getPresetDraft = (key: MenuKey): SavedSubscriptionPreset => {
+  const id = menuKey(key);
+  const existing = presetDrafts.get(id);
+
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const selection = getSelectedSubscription(key);
+  const preset =
+    selection === null || selection.preset === "custom" ? "firehose" : selection.preset;
+  presetDrafts.set(id, preset);
+
+  return preset;
+};
+
+export const setPresetDraft = (
+  key: MenuKey,
+  preset: SavedSubscriptionPreset
+): void => {
+  presetDrafts.set(menuKey(key), preset);
+};
+
+export const clearPresetDraft = (key: MenuKey): void => {
+  presetDrafts.delete(menuKey(key));
 };
 
 export const getRepoDraft = (key: MenuKey): string[] | null => {

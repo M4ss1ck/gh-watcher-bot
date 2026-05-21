@@ -1,7 +1,7 @@
 // Wires grammY bot setup, middleware, menus, throttling, and retry behavior.
 import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
-import { Bot, type Api, type BotCommand, type Transformer } from "grammy";
+import { Bot, type Api, type Transformer } from "grammy";
 
 import { adminMenu, registerAdminCommand, registerAdminMenus } from "~/bot/commands/admin";
 import { registerHelpCommand } from "~/bot/commands/help";
@@ -9,6 +9,7 @@ import { registerPingCommand } from "~/bot/commands/ping";
 import { registerStartCommand } from "~/bot/commands/start";
 import { registerSubscribeCommand } from "~/bot/commands/subscribe";
 import { filtersMenu } from "~/bot/menus/filters";
+import { presetMenu } from "~/bot/menus/preset";
 import { reposMenu } from "~/bot/menus/repos";
 import { rootMenu, menuButtonStyleTransformer } from "~/bot/menus/root";
 import { scheduleMenu } from "~/bot/menus/schedule";
@@ -53,7 +54,14 @@ const registerMenus = (): void => {
 
   rootMenu.register(subscriptionMenu);
   rootMenu.register(
-    [filtersMenu, reposMenu, scheduleMenu, timezoneMenu, subscriptionDeleteConfirmMenu],
+    [
+      presetMenu,
+      filtersMenu,
+      reposMenu,
+      scheduleMenu,
+      timezoneMenu,
+      subscriptionDeleteConfirmMenu
+    ],
     "subscription-detail"
   );
   registerAdminMenus();
@@ -65,7 +73,7 @@ export const createBot = (): Bot => {
 
   bot.api.config.use(apiThrottler());
   bot.api.config.use(
-    autoRetry({ maxRetryAttempts: 3, retryOnInternalServerErrors: true })
+    autoRetry({ maxRetryAttempts: 3, rethrowInternalServerErrors: false })
   );
   bot.api.config.use(htmlParseMode);
   bot.api.config.use(menuButtonStyleTransformer);
@@ -88,14 +96,16 @@ export const createBot = (): Bot => {
   return bot;
 };
 
-const publicCommands: BotCommand[] = [
+type BotCommands = Parameters<Api["setMyCommands"]>[0];
+
+const publicCommands: BotCommands = [
   { command: "start", description: "Introduce the bot" },
   { command: "help", description: "Show available commands" },
   { command: "ping", description: "Check whether the bot is alive" },
   { command: "subscribe", description: "Manage GitHub subscriptions for this chat" }
 ];
 
-const adminCommands: BotCommand[] = [
+const adminCommands: BotCommands = [
   ...publicCommands,
   { command: "admin", description: "Admin menu" }
 ];

@@ -5,6 +5,7 @@ import type { Context } from "grammy";
 import { getDeliverer, getGitHubClient } from "~/bot/menus/deps";
 import {
   filtersMenuId,
+  presetMenuId,
   rootMenuId,
   scheduleMenuId,
   subscriptionDeleteConfirmMenuId,
@@ -16,6 +17,7 @@ import {
   menuKeyFromContext
 } from "~/bot/menus/root";
 import {
+  clearPresetDraft,
   clearSelectedSubscription,
   getSelectedSubscription,
   updateSelectedSubscription
@@ -155,9 +157,19 @@ export const runSubscriptionPreview = async (
 };
 
 export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
+  .submenu("🎛 Preset", presetMenuId, async (ctx) => {
+    const key = menuKeyFromContext(ctx);
+
+    if (key !== null) {
+      clearPresetDraft(key);
+    }
+
+    await ctx.editMessageText("Preset");
+  })
   .submenu("⚙️ Filters", filtersMenuId, async (ctx) => {
     await ctx.editMessageText("Filters");
   })
+  .row()
   .submenu("🕐 Schedule", scheduleMenuId, async (ctx) => {
     await ctx.editMessageText("Schedule");
   })
