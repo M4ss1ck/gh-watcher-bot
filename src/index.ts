@@ -1,27 +1,12 @@
 // Starts the bot process and waits for a shutdown signal.
 import { createBot } from "~/bot";
+import { libsqlClient } from "~/db/client";
 import { runMigrations } from "~/db/migrate";
 import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
+import { setupShutdown } from "~/lifecycle/shutdown";
 import { startCollector } from "~/scheduler/collector";
 import { startDeliverer } from "~/scheduler/deliverer";
-
-const shutdownSignals = ["SIGINT", "SIGTERM"] as const;
-
-const waitForShutdownSignal = async (): Promise<(typeof shutdownSignals)[number]> =>
-  new Promise((resolve) => {
-    const stop = (signal: (typeof shutdownSignals)[number]) => {
-      for (const shutdownSignal of shutdownSignals) {
-        process.off(shutdownSignal, stop);
-      }
-
-      resolve(signal);
-    };
-
-    for (const signal of shutdownSignals) {
-      process.once(signal, stop);
-    }
-  });
 
 const main = async (): Promise<void> => {
   logger.debug({ node_env: env.NODE_ENV }, "environment loaded");
@@ -39,36 +24,29 @@ const main = async (): Promise<void> => {
   const deliverer = startDeliverer({
     api: bot.api
   });
-
-  const botRun = bot.start({
-    allowed_updates: ["message", "callback_query", "my_chat_member"],
-    onStart: (botInfo) => {
-      logger.info({ bot_username: botInfo.username }, "bot started");
-    }
+  const shutdown = setupShutdown({
+    bot,
+    collector,
+    deliverer,
+    db: libsqlClient
   });
 
-  const result = await Promise.race([
-    waitForShutdownSignal().then((signal) => ({ type: "signal" as const, signal })),
-    botRun.then(() => ({ type: "bot_stopped" as const }))
-  ]);
+  void bot
+    .start({
+      allowed_updates: ["message", "callback_query", "my_chat_member"],
+      onStart: (botInfo) => {
+        logger.info({ bot_username: botInfo.username }, "bot started");
+      }
+    })
+    .then(() => {
+      shutdown.trigger("bot_stopped");
+    })
+    .catch((error) => {
+      logger.error({ err: error }, "bot polling crashed");
+      shutdown.trigger("bot_crashed");
+    });
 
-  if (result.type === "bot_stopped") {
-    logger.warn("bot polling stopped");
-    collector.stop();
-    deliverer.stop();
-    await deliverer.onIdle();
-    return;
-  }
-
-  logger.info({ signal: result.signal }, "shutdown requested");
-
-  collector.stop();
-  deliverer.stop();
-  await deliverer.onIdle();
-  await bot.stop();
-  await botRun;
-
-  logger.info("stopped");
+  await shutdown.done;
 };
 
 try {

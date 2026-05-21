@@ -1,16 +1,7 @@
 // Checks whether the collector heartbeat is recent enough for Docker health checks.
 import { libsqlClient } from "~/db/client";
 import { getKvValue } from "~/db/queries";
-
-const parsePollIntervalMinutes = (cron: string): number => {
-  const match = /^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/.exec(cron);
-
-  if (match?.[1]) {
-    return Number(match[1]);
-  }
-
-  return 10;
-};
+import { env, parsePollIntervalMinutes } from "~/lib/env";
 
 const main = async (): Promise<void> => {
   let exitCode = 0;
@@ -29,9 +20,7 @@ const main = async (): Promise<void> => {
         exitCode = 1;
       } else {
         const now = Date.now();
-        const intervalMinutes = parsePollIntervalMinutes(
-          process.env.POLL_INTERVAL_CRON ?? "*/10 * * * *"
-        );
+        const intervalMinutes = parsePollIntervalMinutes(env.POLL_INTERVAL_CRON);
         const thresholdMs = intervalMinutes * 2 * 60 * 1000;
 
         if (now - lastTick > thresholdMs) {

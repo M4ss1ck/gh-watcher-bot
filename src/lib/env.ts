@@ -44,3 +44,16 @@ const rawEnvSchema = z
 export const env = rawEnvSchema.parse(process.env);
 
 export type Env = typeof env;
+
+const cronEveryNMinutesPattern = /^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/;
+const defaultPollIntervalMinutes = 10;
+
+export const parsePollIntervalMinutes = (cron: string): number => {
+  const match = cronEveryNMinutesPattern.exec(cron);
+
+  if (match?.[1]) {
+    return Number(match[1]);
+  }
+
+  return defaultPollIntervalMinutes;
+};

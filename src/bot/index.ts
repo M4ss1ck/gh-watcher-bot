@@ -57,7 +57,9 @@ export const createBot = (): Bot => {
   const bot = new Bot(env.BOT_TOKEN);
 
   bot.api.config.use(apiThrottler());
-  bot.api.config.use(autoRetry({ maxRetryAttempts: 3 }));
+  bot.api.config.use(
+    autoRetry({ maxRetryAttempts: 3, retryOnInternalServerErrors: true })
+  );
   bot.api.config.use(htmlParseMode);
   bot.api.config.use(menuButtonStyleTransformer);
 
