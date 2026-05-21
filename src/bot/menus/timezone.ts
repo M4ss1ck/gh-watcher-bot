@@ -2,6 +2,7 @@
 import { Menu } from "@grammyjs/menu";
 import type { Context } from "grammy";
 
+import { getDeliverer } from "~/bot/menus/deps";
 import { timezoneMenuId, subscriptionMenuId } from "~/bot/menus/ids";
 import {
   buildSubscriptionMenuText,
@@ -13,6 +14,9 @@ import {
   updateSelectedSubscription
 } from "~/bot/menus/state";
 import { textInputs } from "~/bot/menus/textInput";
+import { requireChatAdminCallback } from "~/bot/middleware/chatAdminOnly";
+import { updateSubscriptionSchedule } from "~/db/queries";
+import { logger } from "~/lib/logger";
 
 export const commonTimezones = [
   "UTC",
@@ -26,6 +30,20 @@ export const commonTimezones = [
 export const isSupportedTimezone = (value: string): boolean =>
   value === "UTC" || Intl.supportedValuesOf("timeZone").includes(value);
 
+const syncDeliverer = async (): Promise<void> => {
+  const deliverer = getDeliverer();
+
+  if (deliverer === null) {
+    return;
+  }
+
+  try {
+    await deliverer.sync();
+  } catch (error) {
+    logger.error({ err: error }, "deliverer sync failed");
+  }
+};
+
 export const timezoneMenu = new Menu<Context>(timezoneMenuId)
   .dynamic((ctx, range) => {
     const key = menuKeyFromContext(ctx);
@@ -35,10 +53,30 @@ export const timezoneMenu = new Menu<Context>(timezoneMenuId)
       range.text(
         `${state?.timezone === timezone ? "◉" : "○"} ${timezone}`,
         async (menuCtx) => {
+          if (!(await requireChatAdminCallback(menuCtx))) {
+            return;
+          }
+
           const menuKey = menuKeyFromContext(menuCtx);
 
-          if (menuKey !== null) {
-            updateSelectedSubscription(menuKey, { timezone });
+          if (menuKey === null) {
+            return;
+          }
+
+          const updated = updateSelectedSubscription(menuKey, { timezone });
+
+          if (updated?.id != null) {
+            try {
+              await updateSubscriptionSchedule(updated.id, updated.schedulePreset, timezone);
+              await syncDeliverer();
+            } catch (error) {
+              logger.error(
+                { err: error, subscription_id: updated.id },
+                "timezone save failed"
+              );
+              await menuCtx.answerCallbackQuery({ text: "Save failed. Try again." });
+              return;
+            }
           }
 
           await menuCtx.editMessageText(buildSubscriptionMenuText(menuCtx), {
@@ -51,6 +89,10 @@ export const timezoneMenu = new Menu<Context>(timezoneMenuId)
     return range;
   })
   .text("Other...", async (ctx) => {
+    if (!(await requireChatAdminCallback(ctx))) {
+      return;
+    }
+
     const key = menuKeyFromContext(ctx);
 
     if (key === null) {

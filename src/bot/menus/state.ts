@@ -42,6 +42,11 @@ export const getSelectedSubscription = (
   key: MenuKey
 ): SubscriptionMenuState | null => selections.get(menuKey(key)) ?? null;
 
+export const clearSelectedSubscription = (key: MenuKey): void => {
+  selections.delete(menuKey(key));
+  filterDrafts.delete(menuKey(key));
+};
+
 export const updateSelectedSubscription = (
   key: MenuKey,
   patch: Partial<SubscriptionMenuState>

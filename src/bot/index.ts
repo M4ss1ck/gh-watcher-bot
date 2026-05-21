@@ -1,7 +1,7 @@
 // Wires grammY bot setup, middleware, menus, throttling, and retry behavior.
 import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
-import { Bot, type Transformer } from "grammy";
+import { Bot, type Api, type BotCommand, type Transformer } from "grammy";
 
 import { adminMenu, registerAdminCommand, registerAdminMenus } from "~/bot/commands/admin";
 import { registerHelpCommand } from "~/bot/commands/help";
@@ -11,7 +11,10 @@ import { registerSubscribeCommand } from "~/bot/commands/subscribe";
 import { filtersMenu } from "~/bot/menus/filters";
 import { rootMenu, menuButtonStyleTransformer } from "~/bot/menus/root";
 import { scheduleMenu } from "~/bot/menus/schedule";
-import { subscriptionMenu } from "~/bot/menus/subscription";
+import {
+  subscriptionDeleteConfirmMenu,
+  subscriptionMenu
+} from "~/bot/menus/subscription";
 import { timezoneMenu } from "~/bot/menus/timezone";
 import { registerChatLifecycleHandlers } from "~/bot/middleware/chatRegistration";
 import { env } from "~/lib/env";
@@ -48,7 +51,10 @@ const registerMenus = (): void => {
   }
 
   rootMenu.register(subscriptionMenu);
-  rootMenu.register([filtersMenu, scheduleMenu, timezoneMenu], "subscription-detail");
+  rootMenu.register(
+    [filtersMenu, scheduleMenu, timezoneMenu, subscriptionDeleteConfirmMenu],
+    "subscription-detail"
+  );
   registerAdminMenus();
   menusRegistered = true;
 };
@@ -79,4 +85,36 @@ export const createBot = (): Bot => {
   });
 
   return bot;
+};
+
+const publicCommands: BotCommand[] = [
+  { command: "start", description: "Introduce the bot" },
+  { command: "help", description: "Show available commands" },
+  { command: "ping", description: "Check whether the bot is alive" },
+  { command: "subscribe", description: "Manage GitHub subscriptions for this chat" }
+];
+
+const adminCommands: BotCommand[] = [
+  ...publicCommands,
+  { command: "admin", description: "Admin menu" }
+];
+
+export const publishBotCommands = async (
+  api: Api,
+  adminIds: readonly number[]
+): Promise<void> => {
+  await api.setMyCommands(publicCommands);
+
+  for (const adminId of adminIds) {
+    try {
+      await api.setMyCommands(adminCommands, {
+        scope: { type: "chat", chat_id: adminId }
+      });
+    } catch (error) {
+      logger.warn(
+        { err: error, admin_id: adminId },
+        "failed to publish admin commands for user"
+      );
+    }
+  }
 };

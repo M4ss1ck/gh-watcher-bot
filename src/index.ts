@@ -1,7 +1,9 @@
 // Starts the bot process and waits for a shutdown signal.
-import { createBot } from "~/bot";
+import { createBot, publishBotCommands } from "~/bot";
+import { setDeliverer, setGitHubClient } from "~/bot/menus/deps";
 import { libsqlClient } from "~/db/client";
 import { runMigrations } from "~/db/migrate";
+import { createGitHubClient } from "~/github/client";
 import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
 import { setupShutdown } from "~/lifecycle/shutdown";
@@ -14,22 +16,34 @@ const main = async (): Promise<void> => {
 
   await runMigrations();
 
+  const githubClient = createGitHubClient();
+  setGitHubClient(githubClient);
+
   const bot = createBot();
   // runImmediately writes the first heartbeat at boot so the Docker healthcheck
   // does not spend the first cron interval reporting "no collector heartbeat".
   const collector = startCollector({
     cronExpression: env.POLL_INTERVAL_CRON,
-    runImmediately: true
+    runImmediately: true,
+    client: githubClient
   });
   const deliverer = startDeliverer({
     api: bot.api
   });
+  setDeliverer(deliverer);
+
   const shutdown = setupShutdown({
     bot,
     collector,
     deliverer,
     db: libsqlClient
   });
+
+  try {
+    await publishBotCommands(bot.api, env.ADMIN_IDS);
+  } catch (error) {
+    logger.warn({ err: error }, "failed to publish bot commands");
+  }
 
   void bot
     .start({

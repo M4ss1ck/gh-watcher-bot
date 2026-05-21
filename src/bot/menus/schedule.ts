@@ -3,6 +3,7 @@ import { Menu } from "@grammyjs/menu";
 import type { Context } from "grammy";
 
 import { schedulePresetValues, type SchedulePreset } from "~/db/schema";
+import { getDeliverer } from "~/bot/menus/deps";
 import { scheduleMenuId, subscriptionMenuId } from "~/bot/menus/ids";
 import {
   buildSubscriptionMenuText,
@@ -13,12 +14,29 @@ import {
   getSelectedSubscription,
   updateSelectedSubscription
 } from "~/bot/menus/state";
+import { requireChatAdminCallback } from "~/bot/middleware/chatAdminOnly";
+import { updateSubscriptionSchedule } from "~/db/queries";
+import { logger } from "~/lib/logger";
 
 const setSchedule = (ctx: Context, schedulePreset: SchedulePreset): void => {
   const key = menuKeyFromContext(ctx);
 
   if (key !== null) {
     updateSelectedSubscription(key, { schedulePreset });
+  }
+};
+
+const syncDeliverer = async (): Promise<void> => {
+  const deliverer = getDeliverer();
+
+  if (deliverer === null) {
+    return;
+  }
+
+  try {
+    await deliverer.sync();
+  } catch (error) {
+    logger.error({ err: error }, "deliverer sync failed");
   }
 };
 
@@ -29,7 +47,11 @@ export const scheduleMenu = new Menu<Context>(scheduleMenuId)
 
     for (const preset of schedulePresetValues) {
       const selected = state?.schedulePreset === preset;
-      range.text(`${selected ? "◉" : "○"} ${preset}`, (menuCtx) => {
+      range.text(`${selected ? "◉" : "○"} ${preset}`, async (menuCtx) => {
+        if (!(await requireChatAdminCallback(menuCtx))) {
+          return;
+        }
+
         setSchedule(menuCtx, preset);
         menuCtx.menu.update();
       }).row();
@@ -38,6 +60,24 @@ export const scheduleMenu = new Menu<Context>(scheduleMenuId)
     return range;
   })
   .text("💾 Save", async (ctx) => {
+    if (!(await requireChatAdminCallback(ctx))) {
+      return;
+    }
+
+    const key = menuKeyFromContext(ctx);
+    const state = key === null ? null : getSelectedSubscription(key);
+
+    if (state?.id != null) {
+      try {
+        await updateSubscriptionSchedule(state.id, state.schedulePreset, state.timezone);
+        await syncDeliverer();
+      } catch (error) {
+        logger.error({ err: error, subscription_id: state.id }, "schedule save failed");
+        await ctx.answerCallbackQuery({ text: "Save failed. Try again." });
+        return;
+      }
+    }
+
     await ctx.editMessageText(buildSubscriptionMenuText(ctx), {
       reply_markup: subscriptionMenu
     });

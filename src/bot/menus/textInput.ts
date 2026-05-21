@@ -1,5 +1,5 @@
 // Tracks short-lived ad-hoc text input prompts for menus.
-export type TextInputKind = "username" | "timezone";
+export type TextInputKind = "username" | "timezone" | "repos";
 
 export type TextInputKey = {
   chatId: number;

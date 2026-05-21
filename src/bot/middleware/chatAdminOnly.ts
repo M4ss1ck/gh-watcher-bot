@@ -48,6 +48,35 @@ export const clearChatAdminCache = (chatId?: number): void => {
   cache.delete(chatId);
 };
 
+export const isChatAdminContext = async (ctx: Context): Promise<boolean> => {
+  if (isAdminUserId(ctx.from?.id)) {
+    return true;
+  }
+
+  if (ctx.chat === undefined || ctx.from === undefined) {
+    return false;
+  }
+
+  if (ctx.chat.type === "private") {
+    return true;
+  }
+
+  return isUserChatAdmin(ctx.api, ctx.chat.id, ctx.from.id);
+};
+
+export const requireChatAdminCallback = async (
+  ctx: Context
+): Promise<boolean> => {
+  if (await isChatAdminContext(ctx)) {
+    return true;
+  }
+
+  await ctx.answerCallbackQuery({
+    text: "Only chat admins can change subscriptions."
+  });
+  return false;
+};
+
 export const chatAdminOnly: MiddlewareFn<Context> = async (ctx, next) => {
   if (isAdminUserId(ctx.from?.id)) {
     await next();

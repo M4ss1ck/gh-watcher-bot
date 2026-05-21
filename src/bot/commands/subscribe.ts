@@ -1,6 +1,7 @@
 // Handles subscribe command entry points and subscription menu routing.
 import type { Bot, Context, NextFunction } from "grammy";
 
+import { applyReposInput } from "~/bot/menus/filters";
 import { buildRootMenuText, menuKeyFromContext, openDraftSubscription } from "~/bot/menus/root";
 import { rootMenu } from "~/bot/menus/root";
 import {
@@ -11,6 +12,7 @@ import { isSupportedTimezone } from "~/bot/menus/timezone";
 import { textInputs, TextInputTtlMap } from "~/bot/menus/textInput";
 import { updateSelectedSubscription } from "~/bot/menus/state";
 import { chatAdminOnly } from "~/bot/middleware/chatAdminOnly";
+import { updateSubscriptionSchedule } from "~/db/queries";
 
 export { TextInputTtlMap };
 
@@ -82,6 +84,12 @@ const handleTextInput = async (
     return;
   }
 
+  if (waiting.waitingFor === "repos") {
+    applyReposInput(key, ctx.message.text);
+    await ctx.reply("Repos updated. Open Filters and tap Save to commit.");
+    return;
+  }
+
   const timezone = ctx.message.text.trim();
 
   if (!isSupportedTimezone(timezone)) {
@@ -89,7 +97,12 @@ const handleTextInput = async (
     return;
   }
 
-  updateSelectedSubscription(key, { timezone });
+  const updated = updateSelectedSubscription(key, { timezone });
+
+  if (updated?.id != null) {
+    await updateSubscriptionSchedule(updated.id, updated.schedulePreset, timezone);
+  }
+
   await ctx.reply(`Timezone set to ${timezone}.`, {
     reply_markup: subscriptionMenu
   });

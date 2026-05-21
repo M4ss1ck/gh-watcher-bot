@@ -1,7 +1,7 @@
 // Verifies public bot command message text.
 import { describe, expect, test } from "bun:test";
 
-import { helpMessage } from "~/bot/commands/help";
+import { buildHelpMessage } from "~/bot/commands/help";
 import { buildPingMessage } from "~/bot/commands/ping";
 import { groupStartMessage, privateStartMessage } from "~/bot/commands/start";
 
@@ -11,12 +11,19 @@ describe("public bot command text", () => {
     expect(groupStartMessage).toContain("public GitHub activity");
   });
 
-  test("help lists only the public shell commands", () => {
-    expect(helpMessage).toContain("/start");
-    expect(helpMessage).toContain("/help");
-    expect(helpMessage).toContain("/ping");
-    expect(helpMessage).not.toContain("/admin");
-    expect(helpMessage).not.toContain("/subscribe");
+  test("help for non-admin users lists public commands without /admin", () => {
+    const message = buildHelpMessage(false);
+    expect(message).toContain("/start");
+    expect(message).toContain("/help");
+    expect(message).toContain("/ping");
+    expect(message).toContain("/subscribe");
+    expect(message).not.toContain("/admin");
+  });
+
+  test("help for admin users adds /admin", () => {
+    const message = buildHelpMessage(true);
+    expect(message).toContain("/subscribe");
+    expect(message).toContain("/admin");
   });
 
   test("ping reports collector age in seconds", () => {
