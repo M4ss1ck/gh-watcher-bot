@@ -147,7 +147,7 @@ export const filtersMenu = new Menu<Context>(filtersMenuId)
       const key = menuKeyFromContext(ctx);
       const draft = key === null ? null : getFilterDraft(key);
 
-      return `🤖 Ignore bot authors: ${draft?.filters.ignoreBotAuthors === false ? "☐" : "☑️"}`;
+      return `🤖 Ignore bot authors: ${draft?.filters.ignoreBotAuthors === false ? "❌" : "✅"}`;
     },
     async (ctx) => {
       if (!(await requireChatAdminCallback(ctx))) {
