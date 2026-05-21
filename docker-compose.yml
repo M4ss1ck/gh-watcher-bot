@@ -1,1 +1,13 @@
-# Defines the single-service Docker Compose setup for local runs.
+services:
+  bot:
+    build: .
+    container_name: gh-watcher-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-file:./data/dev.db}
+    volumes:
+      - ./data:/app/data
+    stop_grace_period: 30s

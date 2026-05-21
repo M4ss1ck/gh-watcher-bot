@@ -1,5 +1,6 @@
 // Starts the bot process and waits for a shutdown signal.
 import { createBot } from "~/bot";
+import { runMigrations } from "~/db/migrate";
 import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
 import { startCollector } from "~/scheduler/collector";
@@ -26,9 +27,14 @@ const main = async (): Promise<void> => {
   logger.debug({ node_env: env.NODE_ENV }, "environment loaded");
   logger.info("starting");
 
+  await runMigrations();
+
   const bot = createBot();
+  // runImmediately writes the first heartbeat at boot so the Docker healthcheck
+  // does not spend the first cron interval reporting "no collector heartbeat".
   const collector = startCollector({
-    cronExpression: env.POLL_INTERVAL_CRON
+    cronExpression: env.POLL_INTERVAL_CRON,
+    runImmediately: true
   });
   const deliverer = startDeliverer({
     api: bot.api
