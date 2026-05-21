@@ -134,19 +134,27 @@ const getErrorMessage = (error: unknown): string | null => {
   return null;
 };
 
+const formatGitHubLoginMention = (value: string): string => {
+  const login = normalizeGitHubLogin(value) ?? value.trim().replace(/^@+/, "");
+
+  return `@${login}`;
+};
+
 export const formatSubscriptionCreateError = (
   username: string,
   error: unknown
 ): string => {
+  const mention = formatGitHubLoginMention(username);
+
   if (getErrorStatus(error) === 404) {
-    return `GitHub user @${username} was not found.`;
+    return `GitHub user ${mention} was not found.`;
   }
 
   const message = getErrorMessage(error);
 
   return message === null
-    ? `Could not create a subscription for @${username}. Try again later.`
-    : `Could not create a subscription for @${username}: ${message}`;
+    ? `Could not create a subscription for ${mention}. Try again later.`
+    : `Could not create a subscription for ${mention}: ${message}`;
 };
 
 const handleTextInput = async (

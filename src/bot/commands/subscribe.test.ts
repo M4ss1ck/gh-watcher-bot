@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   TextInputTtlMap,
+  formatSubscriptionCreateError,
   normalizeGitHubLogin
 } from "~/bot/commands/subscribe";
 
@@ -16,6 +17,17 @@ describe("normalizeGitHubLogin", () => {
     expect(normalizeGitHubLogin("bad/name")).toBeNull();
     expect(normalizeGitHubLogin("-bad")).toBeNull();
     expect(normalizeGitHubLogin("bad-")).toBeNull();
+  });
+});
+
+describe("formatSubscriptionCreateError", () => {
+  test("formats login values with or without an @ prefix", () => {
+    expect(formatSubscriptionCreateError("ghost", { status: 404 })).toBe(
+      "GitHub user @ghost was not found."
+    );
+    expect(formatSubscriptionCreateError("@ghost", { status: 404 })).toBe(
+      "GitHub user @ghost was not found."
+    );
   });
 });
 
