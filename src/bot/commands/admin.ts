@@ -18,6 +18,7 @@ import type {
   AdminSubscriptionListItem
 } from "~/db/queries";
 import type { MetricsSnapshot } from "~/lib/metrics";
+import { escapeHtml } from "~/formatting/render";
 import { createGitHubClient, getGitHubRateLimitRemaining } from "~/github/client";
 import { pollGitHubAccount } from "~/github/poller";
 import { logger } from "~/lib/logger";
@@ -467,7 +468,7 @@ export const adminForcePollMenu = new Menu<Context>(adminForcePollMenuId)
         });
 
         await callbackCtx.reply(
-          `Force-poll @${result.login}: ${result.status}, inserted ${result.insertedCount}`
+          `Force-poll <code>@${escapeHtml(result.login)}</code>: ${result.status}, inserted ${result.insertedCount}`
         );
       }).row();
     }

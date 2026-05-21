@@ -20,7 +20,7 @@ import {
   updateSubscriptionSchedule
 } from "~/db/queries";
 import { clonePresetFilters } from "~/filters/presets";
-import { renderAccountSummary } from "~/formatting/render";
+import { escapeHtml, renderAccountSummary } from "~/formatting/render";
 import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
 
@@ -259,7 +259,7 @@ const getErrorMessage = (error: unknown): string | null => {
 const formatGitHubLoginMention = (value: string): string => {
   const login = normalizeGitHubLogin(value) ?? value.trim().replace(/^@+/, "");
 
-  return `@${login}`;
+  return `<code>@${escapeHtml(login)}</code>`;
 };
 
 export const formatSubscriptionCreateError = (

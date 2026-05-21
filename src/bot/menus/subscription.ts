@@ -27,6 +27,7 @@ import {
   setSubscriptionPaused
 } from "~/db/queries";
 import type { GitHubAccountForPolling } from "~/db/queries";
+import { escapeHtml } from "~/formatting/render";
 import {
   pollGitHubAccount,
   type GitHubEventsClient,
@@ -88,7 +89,8 @@ const syncDeliverer = async (): Promise<void> => {
   }
 };
 
-const formatGitHubMention = (login: string): string => `@${login.replace(/^@+/, "")}`;
+const formatGitHubMention = (login: string): string =>
+  `<code>@${escapeHtml(login.replace(/^@+/, ""))}</code>`;
 
 const formatPollFailureMessage = (
   accountLogin: string,
@@ -233,7 +235,9 @@ export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
       return;
     }
 
-    await ctx.editMessageText(`Delete subscription for @${state.accountLogin}?`);
+    await ctx.editMessageText(
+      `Delete subscription for ${formatGitHubMention(state.accountLogin)}?`
+    );
   })
   .row()
   .submenu("◀️ Back", rootMenuId, async (ctx) => {

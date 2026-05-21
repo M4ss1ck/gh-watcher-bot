@@ -89,10 +89,10 @@ describe("subscribeUsageText", () => {
 describe("formatSubscriptionCreateError", () => {
   test("formats login values with or without an @ prefix", () => {
     expect(formatSubscriptionCreateError("ghost", { status: 404 })).toBe(
-      "GitHub user @ghost was not found."
+      "GitHub user <code>@ghost</code> was not found."
     );
     expect(formatSubscriptionCreateError("@ghost", { status: 404 })).toBe(
-      "GitHub user @ghost was not found."
+      "GitHub user <code>@ghost</code> was not found."
     );
   });
 });

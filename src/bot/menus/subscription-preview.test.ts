@@ -73,7 +73,7 @@ describe("runSubscriptionPreview", () => {
 
     expect(calls).toEqual(["get:583231", "poll:torvalds", "deliver:91"]);
     expect(replies).toEqual([
-      "No new events for @torvalds since last delivery. The collector polls every 10 min."
+      "No new events for <code>@torvalds</code> since last delivery. The collector polls every 10 min."
     ]);
   });
 
@@ -114,7 +114,7 @@ describe("runSubscriptionPreview", () => {
 
     expect(calls).toEqual([]);
     expect(replies).toEqual([
-      "Could not refresh @torvalds before preview. GitHub returned 403."
+      "Could not refresh <code>@torvalds</code> before preview. GitHub returned 403."
     ]);
   });
 });

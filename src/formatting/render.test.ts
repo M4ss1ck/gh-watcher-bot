@@ -74,7 +74,7 @@ describe("renderAccountSummary", () => {
       )
     ).toBe(
       [
-        "<b>Watching @octocat</b> · <a href=\"https://github.com/octocat?tab=&lt;overview&gt;\">profile</a>",
+        "<b>Watching <code>@octocat</code></b> · <a href=\"https://github.com/octocat?tab=&lt;overview&gt;\">profile</a>",
         "The &lt;Octocat&gt; · 8 public repos · 12k followers",
         "Schedule: hourly (UTC) · Preset: firehose",
         "Tap /subscribe to manage."

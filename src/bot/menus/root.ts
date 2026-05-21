@@ -3,6 +3,7 @@ import { Menu, MenuRange } from "@grammyjs/menu";
 import type { Context, Transformer } from "grammy";
 
 import type { SubscriptionListItem } from "~/db/queries";
+import { escapeHtml } from "~/formatting/render";
 import { rootMenuId, subscriptionMenuId } from "~/bot/menus/ids";
 import {
   setSelectedSubscription,
@@ -169,7 +170,7 @@ export const rootMenu = new Menu<Context>(rootMenuId)
 export const buildSubscriptionMenuTextFromState = (
   state: SubscriptionMenuState
 ): string => [
-  `@${state.accountLogin}`,
+  `<code>@${escapeHtml(state.accountLogin)}</code>`,
   `Preset: ${state.preset}`,
   `Schedule: ${state.schedulePreset}`,
   `Timezone: ${state.timezone}`,

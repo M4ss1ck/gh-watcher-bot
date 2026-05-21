@@ -40,7 +40,7 @@ export const renderAccountSummary = (
   const repoLabel = summary.publicRepos === 1 ? "public repo" : "public repos";
 
   return [
-    `<b>Watching @${escapeHtml(summary.login)}</b> · <a href="${escapeAttribute(summary.htmlUrl)}">profile</a>`,
+    `<b>Watching <code>@${escapeHtml(summary.login)}</code></b> · <a href="${escapeAttribute(summary.htmlUrl)}">profile</a>`,
     `${escapeHtml(displayName)} · ${summary.publicRepos} ${repoLabel} · ${formatCompactCount(summary.followers)} followers`,
     `Schedule: ${escapeHtml(subscription.schedulePreset)} (${escapeHtml(subscription.timezone)}) · Preset: ${escapeHtml(subscription.preset)}`,
     "Tap /subscribe to manage."
