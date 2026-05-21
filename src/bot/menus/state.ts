@@ -18,6 +18,7 @@ export type SubscriptionMenuState = {
   preset: SubscriptionPreset;
   schedulePreset: SchedulePreset;
   timezone: string;
+  selectedRepos: string[] | null;
   paused: boolean;
   lastDeliveredAt: Date | null;
 };
@@ -29,6 +30,7 @@ export type FilterDraft = {
 
 const selections = new Map<string, SubscriptionMenuState>();
 const filterDrafts = new Map<string, FilterDraft>();
+const repoDrafts = new Map<string, string[] | null>();
 
 export const menuKey = (key: MenuKey): string => `${key.chatId}:${key.userId}`;
 
@@ -46,6 +48,7 @@ export const getSelectedSubscription = (
 export const clearSelectedSubscription = (key: MenuKey): void => {
   selections.delete(menuKey(key));
   filterDrafts.delete(menuKey(key));
+  repoDrafts.delete(menuKey(key));
 };
 
 export const updateSelectedSubscription = (
@@ -91,4 +94,26 @@ export const setFilterDraft = (key: MenuKey, draft: FilterDraft): void => {
 
 export const clearFilterDraft = (key: MenuKey): void => {
   filterDrafts.delete(menuKey(key));
+};
+
+export const getRepoDraft = (key: MenuKey): string[] | null => {
+  const id = menuKey(key);
+
+  if (repoDrafts.has(id)) {
+    return repoDrafts.get(id) ?? null;
+  }
+
+  const selected = getSelectedSubscription(key)?.selectedRepos ?? null;
+  const draft = selected === null ? null : [...selected];
+  repoDrafts.set(id, draft);
+
+  return draft;
+};
+
+export const setRepoDraft = (key: MenuKey, selectedRepos: string[] | null): void => {
+  repoDrafts.set(menuKey(key), selectedRepos === null ? null : [...selectedRepos]);
+};
+
+export const clearRepoDraft = (key: MenuKey): void => {
+  repoDrafts.delete(menuKey(key));
 };

@@ -23,6 +23,7 @@ const subscription: SubscriptionForDelivery = {
   accountId: 1,
   accountLogin: "octocat",
   filters: filterPresets.firehose,
+  selectedRepos: null,
   lastDeliveredAt: null
 };
 
@@ -145,5 +146,41 @@ describe("runDeliveryTask", () => {
 
     expect(result.status).toBe("skipped");
     expect(cursorWrites).toEqual([]);
+  });
+
+  test("narrows delivery to selected repos before rendering", async () => {
+    const storeState = createStore([
+      pushEvent,
+      {
+        ...releaseEvent,
+        repoName: "octocat/other-repo",
+        createdAt: new Date("2026-05-20T12:30:00Z")
+      }
+    ]);
+    const linuxOnlyStore: DeliveryStore = {
+      ...storeState.store,
+      getSubscriptionForDelivery: async () => ({
+        ...subscription,
+        selectedRepos: ["hello-world"]
+      })
+    };
+    const sentMessages: string[] = [];
+
+    const result = await runDeliveryTask({
+      subscriptionId: subscription.id,
+      store: linuxOnlyStore,
+      sendMessage: async (_chatId, text) => {
+        sentMessages.push(text);
+      },
+      now: new Date("2026-05-20T13:20:00Z")
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.eventCount).toBe(1);
+    expect(sentMessages[0]).toContain("octocat/hello-world");
+    expect(sentMessages[0]).not.toContain("octocat/other-repo");
+    expect(storeState.cursorWrites.map((date) => date.toISOString())).toEqual([
+      "2026-05-20T12:00:00.000Z"
+    ]);
   });
 });

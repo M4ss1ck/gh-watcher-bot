@@ -8,6 +8,13 @@
       "when": 1779244204765,
       "tag": "0000_flashy_chronomancer",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1779328800000,
+      "tag": "0001_repo_subscriptions",
+      "breakpoints": true
     }
   ]
 }

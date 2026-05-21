@@ -1,7 +1,6 @@
 // Handles subscribe command entry points and subscription menu routing.
 import type { Bot, Context, NextFunction } from "grammy";
 
-import { applyReposInput } from "~/bot/menus/filters";
 import { getDeliverer, getGitHubClient } from "~/bot/menus/deps";
 import { buildRootMenuText, menuKeyFromContext } from "~/bot/menus/root";
 import { rootMenu } from "~/bot/menus/root";
@@ -17,6 +16,7 @@ import {
   createOrUpdateSubscription,
   listSubscriptionsForChat,
   resolveOrCreateGitHubAccount,
+  resolveOrCreateGitHubRepo,
   updateSubscriptionSchedule
 } from "~/db/queries";
 import { clonePresetFilters } from "~/filters/presets";
@@ -34,6 +34,81 @@ export const normalizeGitHubLogin = (value: string): string | null => {
   }
 
   return login;
+};
+
+export type SubscribeTarget =
+  | { type: "account"; login: string }
+  | { type: "repo"; owner: string; repo: string };
+
+export const subscribeUsageText =
+  "Usage: /subscribe github_username or /subscribe owner/repo";
+
+const repoNamePattern = /^[\w.-]+$/;
+
+const parseGitHubUrlPath = (value: string): string | null => {
+  const trimmed = value.trim();
+  const candidate = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+
+  let url: URL;
+
+  try {
+    url = new URL(candidate);
+  } catch {
+    return null;
+  }
+
+  if (url.hostname !== "github.com" && url.hostname !== "www.github.com") {
+    return null;
+  }
+
+  const parts = url.pathname
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+
+  return parts.slice(0, 2).join("/");
+};
+
+export const parseSubscribeTarget = (value: string): SubscribeTarget | null => {
+  const trimmed = value.trim();
+  const urlPath =
+    /^https?:\/\/(www\.)?github\.com\//i.test(trimmed) ||
+    /^(www\.)?github\.com\//i.test(trimmed)
+      ? parseGitHubUrlPath(trimmed)
+      : null;
+  const input = (urlPath ?? trimmed).replace(/^@/, "");
+
+  if (input.includes("/")) {
+    const match = /^([\w.-]+)\/([\w.-]+)$/.exec(input);
+
+    if (match === null) {
+      return null;
+    }
+
+    const owner = normalizeGitHubLogin(match[1] ?? "");
+
+    if (owner === null) {
+      return null;
+    }
+
+    const repo = match[2] ?? "";
+
+    if (!repoNamePattern.test(repo)) {
+      return null;
+    }
+
+    return {
+      type: "repo",
+      owner,
+      repo
+    };
+  }
+
+  const login = normalizeGitHubLogin(input);
+
+  return login === null ? null : { type: "account", login };
 };
 
 const getCommandArgument = (ctx: Context & { match?: string }): string =>
@@ -55,7 +130,7 @@ const syncDeliverer = async (): Promise<void> => {
 
 const openSubscriptionForUsername = async (
   ctx: Context,
-  username: string
+  target: SubscribeTarget
 ): Promise<void> => {
   const key = menuKeyFromContext(ctx);
 
@@ -73,7 +148,8 @@ const openSubscriptionForUsername = async (
 
   try {
     const existing = await listSubscriptionsForChat(key.chatId);
-    const account = await resolveOrCreateGitHubAccount(username, client);
+    const ownerLogin = target.type === "account" ? target.login : target.owner;
+    const account = await resolveOrCreateGitHubAccount(ownerLogin, client);
     const alreadyHasAccount = existing.some(
       (item) => item.accountLogin.toLowerCase() === account.login.toLowerCase()
     );
@@ -85,6 +161,20 @@ const openSubscriptionForUsername = async (
       return;
     }
 
+    const existingSubscription = existing.find(
+      (item) => item.accountLogin.toLowerCase() === account.login.toLowerCase()
+    );
+    const selectedRepos =
+      target.type === "account"
+        ? existingSubscription?.selectedRepos ?? null
+        : await resolveSelectedReposForRepoTarget({
+            accountId: account.id,
+            owner: account.login,
+            repo: target.repo,
+            existingSelectedRepos: existingSubscription?.selectedRepos,
+            client
+          });
+
     const id = await createOrUpdateSubscription({
       chatId: key.chatId,
       accountId: account.id,
@@ -92,6 +182,7 @@ const openSubscriptionForUsername = async (
       filters: clonePresetFilters("firehose"),
       schedulePreset: "hourly",
       timezone: "UTC",
+      selectedRepos,
       createdByUserId: key.userId,
       lastDeliveredAt: null
     });
@@ -102,6 +193,7 @@ const openSubscriptionForUsername = async (
       preset: "firehose" as const,
       schedulePreset: "hourly" as const,
       timezone: "UTC",
+      selectedRepos,
       paused: false,
       lastDeliveredAt: null
     };
@@ -114,9 +206,36 @@ const openSubscriptionForUsername = async (
       reply_markup: subscriptionMenu
     });
   } catch (error) {
-    logger.error({ err: error, account_login: username }, "subscription create failed");
-    await ctx.reply(formatSubscriptionCreateError(username, error));
+    const label =
+      target.type === "account" ? target.login : `${target.owner}/${target.repo}`;
+    logger.error({ err: error, account_login: label }, "subscription create failed");
+    await ctx.reply(formatSubscriptionCreateError(label, error));
   }
+};
+
+const resolveSelectedReposForRepoTarget = async (input: {
+  accountId: number;
+  owner: string;
+  repo: string;
+  existingSelectedRepos: string[] | null | undefined;
+  client: Parameters<typeof resolveOrCreateGitHubRepo>[0]["client"];
+}): Promise<string[] | null> => {
+  const repo = await resolveOrCreateGitHubRepo({
+    accountId: input.accountId,
+    owner: input.owner,
+    repo: input.repo,
+    client: input.client
+  });
+
+  if (input.existingSelectedRepos === null) {
+    return null;
+  }
+
+  if (input.existingSelectedRepos === undefined) {
+    return [repo.name];
+  }
+
+  return [...new Set([...input.existingSelectedRepos, repo.name])].sort();
 };
 
 const getErrorStatus = (error: unknown): number | null => {
@@ -186,20 +305,14 @@ const handleTextInput = async (
   }
 
   if (waiting.waitingFor === "username") {
-    const username = normalizeGitHubLogin(ctx.message.text);
+    const target = parseSubscribeTarget(ctx.message.text);
 
-    if (username === null) {
+    if (target === null) {
       await ctx.reply("That does not look like a GitHub username.");
       return;
     }
 
-    await openSubscriptionForUsername(ctx, username);
-    return;
-  }
-
-  if (waiting.waitingFor === "repos") {
-    applyReposInput(key, ctx.message.text);
-    await ctx.reply("Repos updated. Open Filters and tap Save to commit.");
+    await openSubscriptionForUsername(ctx, target);
     return;
   }
 
@@ -237,13 +350,13 @@ export const registerSubscribeCommand = (bot: Bot): void => {
       return;
     }
 
-    const username = normalizeGitHubLogin(argument);
+    const target = parseSubscribeTarget(argument);
 
-    if (username === null) {
-      await ctx.reply("Usage: /subscribe <github_username>");
+    if (target === null) {
+      await ctx.reply(subscribeUsageText);
       return;
     }
 
-    await openSubscriptionForUsername(ctx, username);
+    await openSubscriptionForUsername(ctx, target);
   });
 };

@@ -5,7 +5,11 @@ import { Octokit } from "@octokit/rest";
 
 import {
   parseGitHubPublicEvents,
+  parseGitHubRepoSummary,
+  parseGitHubRepoList,
   parseGitHubUserSummary,
+  type GitHubRepoListItem,
+  type GitHubRepoSummary,
   type GitHubPublicEvent,
   type GitHubUserSummary
 } from "~/github/types";
@@ -40,6 +44,13 @@ export type GitHubApiClient = {
     login: string;
     etag: string | null;
   }) => Promise<GitHubEventsResponse>;
+  fetchRepoEvents: (input: {
+    owner: string;
+    repo: string;
+    etag: string | null;
+  }) => Promise<GitHubEventsResponse>;
+  getRepo: (owner: string, repo: string) => Promise<GitHubRepoSummary>;
+  listRepos: (owner: string) => Promise<GitHubRepoListItem[]>;
   getUser: (login: string) => Promise<GitHubUserSummary>;
 };
 
@@ -80,6 +91,44 @@ export const createGitHubClient = (): GitHubApiClient => {
         },
         data: parseGitHubPublicEvents(response.data)
       };
+    },
+    fetchRepoEvents: async ({ owner, repo, etag }) => {
+      const response = await octokit.request("GET /repos/{owner}/{repo}/events", {
+        owner,
+        repo,
+        headers: etag === null ? undefined : { "If-None-Match": etag }
+      });
+      recordRateLimitRemaining(response.headers);
+
+      return {
+        status: 200,
+        headers: {
+          etag:
+            typeof response.headers.etag === "string"
+              ? response.headers.etag
+              : undefined
+        },
+        data: parseGitHubPublicEvents(response.data)
+      };
+    },
+    getRepo: async (owner, repo) => {
+      const response = await octokit.request("GET /repos/{owner}/{repo}", {
+        owner,
+        repo
+      });
+      recordRateLimitRemaining(response.headers);
+
+      return parseGitHubRepoSummary(response.data);
+    },
+    listRepos: async (owner) => {
+      const response = await octokit.request("GET /users/{username}/repos", {
+        username: owner,
+        per_page: 100,
+        sort: "pushed"
+      });
+      recordRateLimitRemaining(response.headers);
+
+      return parseGitHubRepoList(response.data);
     },
     getUser: async (login) => {
       const response = await octokit.request("GET /users/{username}", {

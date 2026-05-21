@@ -2,25 +2,52 @@
 import { Cron } from "croner";
 import PQueue from "p-queue";
 
-import type { GitHubAccountForPolling } from "~/db/queries";
+import type {
+  GitHubAccountForPolling,
+  GitHubRepoForPolling
+} from "~/db/queries";
 import { createGitHubClient, type GitHubApiClient } from "~/github/client";
-import { pollGitHubAccount, type PollResult } from "~/github/poller";
+import {
+  pollGitHubAccount,
+  pollGitHubRepo,
+  type PollResult
+} from "~/github/poller";
 import { writeCollectorHeartbeat } from "~/lifecycle/heartbeat";
+import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
 
 export type CollectorStore = {
   listGitHubAccountsForPolling: () => Promise<GitHubAccountForPolling[]>;
+  listActiveSubscriptionRepoSelectionsForAccount?: (
+    accountId: number
+  ) => Promise<AccountRepoSelection[]>;
+  listGitHubReposForPolling?: (
+    accountId: number,
+    names: string[]
+  ) => Promise<GitHubRepoForPolling[]>;
   writeCollectorHeartbeat: (date?: Date) => Promise<void>;
 };
+
+export type AccountRepoSelection = {
+  selectedRepos: string[] | null;
+};
+
+export type AccountPollingMode =
+  | { type: "user" }
+  | { type: "repos"; repos: string[] };
 
 export type PollAccount = (
   account: GitHubAccountForPolling
 ) => Promise<PollResult>;
 
+export type PollRepo = (repo: GitHubRepoForPolling) => Promise<PollResult>;
+
 export type CollectorTickOptions = {
   store?: CollectorStore;
   pollAccount?: PollAccount;
+  pollRepo?: PollRepo;
   concurrency?: number;
+  repoPollThreshold?: number;
   now?: Date;
 };
 
@@ -49,6 +76,14 @@ const defaultStore: CollectorStore = {
     const queries = await import("~/db/queries");
     return queries.listGitHubAccountsForPolling();
   },
+  listActiveSubscriptionRepoSelectionsForAccount: async (accountId) => {
+    const queries = await import("~/db/queries");
+    return queries.listActiveSubscriptionRepoSelectionsForAccount(accountId);
+  },
+  listGitHubReposForPolling: async (accountId, names) => {
+    const queries = await import("~/db/queries");
+    return queries.listGitHubReposForPolling(accountId, names);
+  },
   writeCollectorHeartbeat
 };
 
@@ -59,6 +94,26 @@ const emptyStatusCounts = (): Record<PollResult["status"], number> => ({
   failed: 0
 });
 
+export const chooseAccountPollingMode = (
+  selections: AccountRepoSelection[],
+  repoPollThreshold: number
+): AccountPollingMode => {
+  if (
+    selections.length === 0 ||
+    selections.some((selection) => selection.selectedRepos === null)
+  ) {
+    return { type: "user" };
+  }
+
+  const repos = [
+    ...new Set(selections.flatMap((selection) => selection.selectedRepos ?? []))
+  ].sort();
+
+  return repos.length <= repoPollThreshold
+    ? { type: "repos", repos }
+    : { type: "user" };
+};
+
 export const runCollectorTick = async (
   options: CollectorTickOptions = {}
 ): Promise<CollectorTickSummary> => {
@@ -67,14 +122,45 @@ export const runCollectorTick = async (
   const store = options.store ?? defaultStore;
   const accounts = await store.listGitHubAccountsForPolling();
   const queue = new PQueue({ concurrency: options.concurrency ?? 5 });
+  const client = createGitHubClient();
   const pollAccount =
     options.pollAccount ??
     (async (account: GitHubAccountForPolling) =>
-      pollGitHubAccount(account, { client: createGitHubClient(), now }));
+      pollGitHubAccount(account, { client, now }));
+  const pollRepo =
+    options.pollRepo ??
+    (async (repo: GitHubRepoForPolling) =>
+      pollGitHubRepo(repo, { client, now }));
+  const pollAccountByMode = async (
+    account: GitHubAccountForPolling
+  ): Promise<PollResult[]> => {
+    if (
+      store.listActiveSubscriptionRepoSelectionsForAccount === undefined ||
+      store.listGitHubReposForPolling === undefined
+    ) {
+      return [await pollAccount(account)];
+    }
+
+    const selections = await store.listActiveSubscriptionRepoSelectionsForAccount(
+      account.id
+    );
+    const mode = chooseAccountPollingMode(
+      selections,
+      options.repoPollThreshold ?? env.REPO_POLL_THRESHOLD
+    );
+
+    if (mode.type === "user") {
+      return [await pollAccount(account)];
+    }
+
+    const repos = await store.listGitHubReposForPolling(account.id, mode.repos);
+
+    return Promise.all(repos.map((repo) => pollRepo(repo)));
+  };
 
   const results = await Promise.all(
-    accounts.map((account) => queue.add(() => pollAccount(account)))
-  );
+    accounts.map((account) => queue.add(() => pollAccountByMode(account)))
+  ).then((groups) => groups.flat());
   const statusCounts = emptyStatusCounts();
   let fetchedCount = 0;
   let insertedCount = 0;

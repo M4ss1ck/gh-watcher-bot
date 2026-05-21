@@ -8,7 +8,9 @@ type CommandHandler = (ctx: Context & { match?: string }) => Promise<void>;
 
 let commandHandler: CommandHandler | null = null;
 let createdSubscription: unknown = null;
+let createdRepo: unknown = null;
 let delivererSyncCount = 0;
+let existingSubscriptions: unknown[] = [];
 
 const githubClient = {
   getUser: async (_login: string) => ({
@@ -19,6 +21,11 @@ const githubClient = {
     publicRepos: 8,
     followers: 12_345,
     htmlUrl: "https://github.com/octocat"
+  }),
+  getRepo: async (_owner: string, repo: string) => ({
+    id: 1296269,
+    name: repo,
+    fullName: `octocat/${repo}`
   })
 };
 
@@ -40,9 +47,18 @@ mock.module("~/db/queries", () => ({
 
     return 91;
   },
+  resolveOrCreateGitHubRepo: async (input: unknown) => {
+    createdRepo = input;
+
+    return {
+      id: 1296269,
+      name: "hello-world",
+      fullName: "octocat/hello-world"
+    };
+  },
   deleteSubscription: async () => undefined,
   getGitHubAccountById: async () => null,
-  listSubscriptionsForChat: async () => [],
+  listSubscriptionsForChat: async () => existingSubscriptions,
   resolveOrCreateGitHubAccount: async (login: string) => {
     return githubClient.getUser(login);
   },
@@ -63,7 +79,9 @@ describe("/subscribe eager creation", () => {
   beforeEach(() => {
     commandHandler = null;
     createdSubscription = null;
+    createdRepo = null;
     delivererSyncCount = 0;
+    existingSubscriptions = [];
   });
 
   test("creates a subscription with defaults before opening the menu", async () => {
@@ -91,6 +109,7 @@ describe("/subscribe eager creation", () => {
       filters: clonePresetFilters("firehose"),
       schedulePreset: "hourly",
       timezone: "UTC",
+      selectedRepos: null,
       createdByUserId: 456,
       lastDeliveredAt: null
     });
@@ -101,6 +120,7 @@ describe("/subscribe eager creation", () => {
       preset: "firehose",
       schedulePreset: "hourly",
       timezone: "UTC",
+      selectedRepos: null,
       paused: false,
       lastDeliveredAt: null
     });
@@ -118,10 +138,118 @@ describe("/subscribe eager creation", () => {
         "Preset: firehose",
         "Schedule: hourly",
         "Timezone: UTC",
+        "Repos: all repos",
         "Status: active",
         "Last delivery: never"
       ].join("\n")
     );
     expect(delivererSyncCount).toBe(1);
+  });
+
+  test("creates an owner subscription narrowed to a repo target", async () => {
+    const { registerSubscribeCommand } = await import("~/bot/commands/subscribe");
+
+    registerSubscribeCommand(createBot());
+
+    await commandHandler?.({
+      match: "octocat/hello-world",
+      chat: { id: 123, type: "private" },
+      from: { id: 456, is_bot: false, first_name: "Ada" },
+      reply: async () => ({} as never)
+    } as unknown as Context & { match?: string });
+
+    expect(createdRepo).toEqual({
+      accountId: 583231,
+      owner: "octocat",
+      repo: "hello-world",
+      client: githubClient
+    });
+    expect(createdSubscription).toEqual({
+      chatId: 123,
+      accountId: 583231,
+      preset: "firehose",
+      filters: clonePresetFilters("firehose"),
+      schedulePreset: "hourly",
+      timezone: "UTC",
+      selectedRepos: ["hello-world"],
+      createdByUserId: 456,
+      lastDeliveredAt: null
+    });
+  });
+
+  test("keeps an existing all-repos owner subscription broad for repo targets", async () => {
+    const { registerSubscribeCommand } = await import("~/bot/commands/subscribe");
+    existingSubscriptions = [
+      {
+        id: 91,
+        accountId: 583231,
+        accountLogin: "octocat",
+        preset: "firehose",
+        schedulePreset: "hourly",
+        timezone: "UTC",
+        selectedRepos: null,
+        paused: false,
+        lastDeliveredAt: null
+      }
+    ];
+
+    registerSubscribeCommand(createBot());
+
+    await commandHandler?.({
+      match: "octocat/hello-world",
+      chat: { id: 123, type: "private" },
+      from: { id: 456, is_bot: false, first_name: "Ada" },
+      reply: async () => ({} as never)
+    } as unknown as Context & { match?: string });
+
+    expect(createdSubscription).toEqual({
+      chatId: 123,
+      accountId: 583231,
+      preset: "firehose",
+      filters: clonePresetFilters("firehose"),
+      schedulePreset: "hourly",
+      timezone: "UTC",
+      selectedRepos: null,
+      createdByUserId: 456,
+      lastDeliveredAt: null
+    });
+  });
+
+  test("keeps an existing repo-narrowed owner subscription narrow for owner targets", async () => {
+    const { registerSubscribeCommand } = await import("~/bot/commands/subscribe");
+    existingSubscriptions = [
+      {
+        id: 91,
+        accountId: 583231,
+        accountLogin: "octocat",
+        preset: "firehose",
+        schedulePreset: "hourly",
+        timezone: "UTC",
+        selectedRepos: ["hello-world"],
+        paused: false,
+        lastDeliveredAt: null
+      }
+    ];
+
+    registerSubscribeCommand(createBot());
+
+    await commandHandler?.({
+      match: "@octocat",
+      chat: { id: 123, type: "private" },
+      from: { id: 456, is_bot: false, first_name: "Ada" },
+      reply: async () => ({} as never)
+    } as unknown as Context & { match?: string });
+
+    expect(createdSubscription).toEqual({
+      chatId: 123,
+      accountId: 583231,
+      preset: "firehose",
+      filters: clonePresetFilters("firehose"),
+      schedulePreset: "hourly",
+      timezone: "UTC",
+      selectedRepos: ["hello-world"],
+      createdByUserId: 456,
+      lastDeliveredAt: null
+    });
   });
 });

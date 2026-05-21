@@ -69,6 +69,11 @@ describe("GitHub poller", () => {
             created_at: "2026-05-20T11:00:00Z"
           }
         ]
+      }),
+      fetchRepoEvents: async () => ({
+        status: 200,
+        headers: {},
+        data: []
       })
     };
 
@@ -87,7 +92,12 @@ describe("GitHub poller", () => {
     const client: GitHubEventsClient = {
       fetchUserEvents: async () => {
         throw { status: 304, response: { headers: { etag: "same-etag" } } };
-      }
+      },
+      fetchRepoEvents: async () => ({
+        status: 200,
+        headers: {},
+        data: []
+      })
     };
 
     const result = await pollGitHubAccount(account, { client, store });
@@ -103,7 +113,12 @@ describe("GitHub poller", () => {
     const client: GitHubEventsClient = {
       fetchUserEvents: async () => {
         throw { status: 404 };
-      }
+      },
+      fetchRepoEvents: async () => ({
+        status: 200,
+        headers: {},
+        data: []
+      })
     };
 
     const result = await pollGitHubAccount(account, { client, store, now });

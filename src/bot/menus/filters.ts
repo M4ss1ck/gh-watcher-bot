@@ -5,7 +5,8 @@ import type { Context } from "grammy";
 import { filterEventValues, type FilterEvent } from "~/db/schema";
 import { clonePresetFilters } from "~/filters/presets";
 import { getDeliverer } from "~/bot/menus/deps";
-import { filtersMenuId, subscriptionMenuId } from "~/bot/menus/ids";
+import { filtersMenuId, reposMenuId, subscriptionMenuId } from "~/bot/menus/ids";
+import { formatRepoSelectionLabel } from "~/bot/menus/repos";
 import {
   buildSubscriptionMenuText,
   subscriptionMenu
@@ -17,9 +18,7 @@ import {
   getSelectedSubscription,
   setFilterDraft,
   updateSelectedSubscription,
-  type MenuKey
 } from "~/bot/menus/state";
-import { textInputs } from "~/bot/menus/textInput";
 import { requireChatAdminCallback } from "~/bot/middleware/chatAdminOnly";
 import { updateSubscriptionFilters } from "~/db/queries";
 import { logger } from "~/lib/logger";
@@ -52,17 +51,6 @@ const toggleEvent = (ctx: Context, event: FilterEvent): void => {
     }
   });
   updateSelectedSubscription(key, { preset: "custom" });
-};
-
-const formatReposLabel = (state: { include: string[]; exclude: string[] } | null): string => {
-  if (state === null || (state.include.length === 1 && state.include[0] === "*" && state.exclude.length === 0)) {
-    return "📁 Repos: all";
-  }
-
-  const parts = [...state.include.map((value) => value), ...state.exclude.map((value) => `!${value}`)];
-  const preview = parts.slice(0, 3).join(", ");
-
-  return `📁 Repos: ${preview}${parts.length > 3 ? ", ..." : ""}`;
 };
 
 const syncDeliverer = async (): Promise<void> => {
@@ -137,28 +125,20 @@ export const filtersMenu = new Menu<Context>(filtersMenuId)
 
     return range;
   })
-  .text(
+  .submenu(
     (ctx) => {
       const key = menuKeyFromContext(ctx);
-      const draft = key === null ? null : getFilterDraft(key);
+      const state = key === null ? null : getSelectedSubscription(key);
 
-      return formatReposLabel(draft?.filters.repos ?? null);
+      return formatRepoSelectionLabel(state?.selectedRepos ?? null);
     },
+    reposMenuId,
     async (ctx) => {
       if (!(await requireChatAdminCallback(ctx))) {
         return;
       }
 
-      const key = menuKeyFromContext(ctx);
-
-      if (key === null) {
-        return;
-      }
-
-      textInputs.set(key, { waitingFor: "repos" });
-      await ctx.reply(
-        "Send a comma-separated list of repo globs within 60 seconds. Prefix with ! to exclude. Send * to allow all."
-      );
+      await ctx.editMessageText("Repos");
     }
   )
   .row()
@@ -228,55 +208,6 @@ export const filtersMenu = new Menu<Context>(filtersMenuId)
       reply_markup: subscriptionMenu
     });
   });
-
-export const parseReposInput = (
-  input: string
-): { include: string[]; exclude: string[] } => {
-  const tokens = input
-    .split(",")
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0);
-
-  if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === "*")) {
-    return { include: ["*"], exclude: [] };
-  }
-
-  const include: string[] = [];
-  const exclude: string[] = [];
-
-  for (const token of tokens) {
-    if (token.startsWith("!")) {
-      const value = token.slice(1).trim();
-      if (value.length > 0) {
-        exclude.push(value);
-      }
-    } else {
-      include.push(token);
-    }
-  }
-
-  return {
-    include: include.length === 0 ? ["*"] : include,
-    exclude
-  };
-};
-
-export const applyReposInput = (
-  key: MenuKey,
-  input: string
-): void => {
-  const draft = getFilterDraft(key);
-  const repos = parseReposInput(input);
-
-  setFilterDraft(key, {
-    preset: "custom",
-    filters: {
-      ...draft.filters,
-      repos
-    }
-  });
-  updateSelectedSubscription(key, { preset: "custom" });
-};
 
 export const createFilterEventRange = (): MenuRange<Context> =>
   new MenuRange<Context>().dynamic((ctx, range) => {

@@ -29,6 +29,7 @@ const rawEnvSchema = z
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     POLL_INTERVAL_CRON: z.string().min(1).default("*/10 * * * *"),
     MAX_SUBS_PER_CHAT: z.coerce.number().int().positive().default(20),
+    REPO_POLL_THRESHOLD: z.coerce.number().int().positive().default(5),
     GITHUB_TOKEN: z.string().optional()
   })
   .superRefine((value, context) => {

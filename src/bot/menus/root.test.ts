@@ -23,6 +23,7 @@ describe("subscription root menu helpers", () => {
         preset: "releases_only",
         schedulePreset: "daily_09",
         timezone: "UTC",
+        selectedRepos: null,
         paused: false,
         lastDeliveredAt: null
       } satisfies SubscriptionListItem)

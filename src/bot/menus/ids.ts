@@ -3,6 +3,7 @@ export const rootMenuId = "subscribe-root";
 export const subscriptionMenuId = "subscription-detail";
 export const subscriptionDeleteConfirmMenuId = "subscription-delete-confirm";
 export const filtersMenuId = "subscription-filters";
+export const reposMenuId = "subscription-repos";
 export const scheduleMenuId = "subscription-schedule";
 export const timezoneMenuId = "subscription-timezone";
 export const adminMenuId = "admin-root";

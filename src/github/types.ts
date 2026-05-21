@@ -24,6 +24,14 @@ export type GitHubUserSummary = {
   htmlUrl: string;
 };
 
+export type GitHubRepoSummary = {
+  id: number;
+  name: string;
+  fullName: string;
+};
+
+export type GitHubRepoListItem = GitHubRepoSummary;
+
 export type StoredEvent = {
   id: string;
   accountId: number;
@@ -93,4 +101,32 @@ export const parseGitHubUserSummary = (value: unknown): GitHubUserSummary => {
     followers: value.followers,
     htmlUrl: value.html_url
   };
+};
+
+export const parseGitHubRepoSummary = (value: unknown): GitHubRepoSummary => {
+  if (!isRecord(value)) {
+    throw new Error("GitHub repo response was not an object");
+  }
+
+  if (
+    typeof value.id !== "number" ||
+    typeof value.name !== "string" ||
+    typeof value.full_name !== "string"
+  ) {
+    throw new Error("GitHub repo response did not include required summary fields");
+  }
+
+  return {
+    id: value.id,
+    name: value.name,
+    fullName: value.full_name
+  };
+};
+
+export const parseGitHubRepoList = (value: unknown): GitHubRepoListItem[] => {
+  if (!Array.isArray(value)) {
+    throw new Error("GitHub repos response was not an array");
+  }
+
+  return value.map(parseGitHubRepoSummary);
 };

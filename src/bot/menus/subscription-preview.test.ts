@@ -19,6 +19,11 @@ const client: GitHubEventsClient = {
     status: 200,
     headers: {},
     data: []
+  }),
+  fetchRepoEvents: async () => ({
+    status: 200,
+    headers: {},
+    data: []
   })
 };
 

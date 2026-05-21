@@ -3,7 +3,11 @@ import type {
   GitHubAccountForPolling,
   MarkGitHubAccountPollNotModifiedInput,
   MarkGitHubAccountPollSucceededInput,
+  MarkGitHubRepoPollNotModifiedInput,
+  MarkGitHubRepoPollSucceededInput,
   RecordGitHubAccountPollFailureInput,
+  RecordGitHubRepoPollFailureInput,
+  GitHubRepoForPolling,
   StoredGitHubEventInput
 } from "~/db/queries";
 import type { GitHubEventsResponse } from "~/github/client";
@@ -21,6 +25,11 @@ export type GitHubEventsClient = {
     login: string;
     etag: string | null;
   }) => Promise<GitHubEventsResponse>;
+  fetchRepoEvents: (input: {
+    owner: string;
+    repo: string;
+    etag: string | null;
+  }) => Promise<GitHubEventsResponse>;
 };
 
 export type PollerStore = {
@@ -33,6 +42,15 @@ export type PollerStore = {
   ) => Promise<void>;
   recordAccountPollFailure: (
     input: RecordGitHubAccountPollFailureInput
+  ) => Promise<void>;
+  markRepoPollSucceeded?: (
+    input: MarkGitHubRepoPollSucceededInput
+  ) => Promise<void>;
+  markRepoPollNotModified?: (
+    input: MarkGitHubRepoPollNotModifiedInput
+  ) => Promise<void>;
+  recordRepoPollFailure?: (
+    input: RecordGitHubRepoPollFailureInput
   ) => Promise<void>;
 };
 
@@ -95,6 +113,18 @@ const defaultStore: PollerStore = {
   recordAccountPollFailure: async (input) => {
     const queries = await import("~/db/queries");
     await queries.recordGitHubAccountPollFailure(input);
+  },
+  markRepoPollSucceeded: async (input) => {
+    const queries = await import("~/db/queries");
+    await queries.markGitHubRepoPollSucceeded(input);
+  },
+  markRepoPollNotModified: async (input) => {
+    const queries = await import("~/db/queries");
+    await queries.markGitHubRepoPollNotModified(input);
+  },
+  recordRepoPollFailure: async (input) => {
+    const queries = await import("~/db/queries");
+    await queries.recordGitHubRepoPollFailure(input);
   }
 };
 
@@ -268,6 +298,127 @@ export const pollGitHubAccount = async (
       status: "failed",
       accountId: account.id,
       login: account.login,
+      fetchedCount: 0,
+      insertedCount: 0,
+      consecutiveFailures,
+      pausedUntil,
+      failureStatus
+    };
+  }
+};
+
+const requireRepoStore = (
+  store: PollerStore
+): Required<Pick<
+  PollerStore,
+  "markRepoPollSucceeded" | "markRepoPollNotModified" | "recordRepoPollFailure"
+>> => {
+  if (
+    store.markRepoPollSucceeded === undefined ||
+    store.markRepoPollNotModified === undefined ||
+    store.recordRepoPollFailure === undefined
+  ) {
+    throw new Error("repo polling store methods are unavailable");
+  }
+
+  return {
+    markRepoPollSucceeded: store.markRepoPollSucceeded,
+    markRepoPollNotModified: store.markRepoPollNotModified,
+    recordRepoPollFailure: store.recordRepoPollFailure
+  };
+};
+
+export const pollGitHubRepo = async (
+  repo: GitHubRepoForPolling,
+  options: PollGitHubAccountOptions
+): Promise<PollResult> => {
+  const now = options.now ?? new Date();
+  const store = options.store ?? defaultStore;
+  const repoStore = requireRepoStore(store);
+  const login = `${repo.ownerLogin}/${repo.name}`;
+
+  if (repo.pausedUntil !== null && repo.pausedUntil > now) {
+    return {
+      status: "skipped_paused",
+      accountId: repo.accountId,
+      login,
+      fetchedCount: 0,
+      insertedCount: 0,
+      pausedUntil: repo.pausedUntil
+    };
+  }
+
+  try {
+    const response = await options.client.fetchRepoEvents({
+      owner: repo.ownerLogin,
+      repo: repo.name,
+      etag: repo.etag
+    });
+    incrementGitHubApiRequest("200");
+    const etag = response.headers.etag ?? repo.etag;
+    const newestEventId = response.data[0]?.id ?? repo.lastEventId;
+    const newEvents = getEventsNewerThanCursor(response.data, repo.lastEventId)
+      .map((event) => toStoredEvent(repo.accountId, event))
+      .filter((event): event is StoredGitHubEventInput => event !== null);
+
+    await store.insertEvents(newEvents);
+    for (const event of newEvents) {
+      incrementEventsCollected(event.type);
+    }
+
+    await repoStore.markRepoPollSucceeded({
+      repoId: repo.id,
+      etag,
+      lastEventId: newestEventId
+    });
+
+    return {
+      status: "ok",
+      accountId: repo.accountId,
+      login,
+      fetchedCount: response.data.length,
+      insertedCount: newEvents.length,
+      etag,
+      lastEventId: newestEventId
+    };
+  } catch (error) {
+    const failureStatus = getErrorStatus(error);
+    incrementGitHubApiRequest(toGitHubApiStatus(failureStatus));
+
+    if (failureStatus === 304) {
+      const etag = getHeaderEtag(error) ?? repo.etag;
+
+      await repoStore.markRepoPollNotModified({
+        repoId: repo.id,
+        etag
+      });
+
+      return {
+        status: "not_modified",
+        accountId: repo.accountId,
+        login,
+        fetchedCount: 0,
+        insertedCount: 0,
+        etag
+      };
+    }
+
+    const consecutiveFailures = repo.consecutiveFailures + 1;
+    const pausedUntil =
+      failureStatus === 404 && consecutiveFailures >= 5
+        ? new Date(now.getTime() + dayMs)
+        : null;
+
+    await repoStore.recordRepoPollFailure({
+      repoId: repo.id,
+      consecutiveFailures,
+      pausedUntil
+    });
+
+    return {
+      status: "failed",
+      accountId: repo.accountId,
+      login,
       fetchedCount: 0,
       insertedCount: 0,
       consecutiveFailures,

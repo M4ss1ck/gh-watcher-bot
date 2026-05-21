@@ -9,6 +9,7 @@ import { registerPingCommand } from "~/bot/commands/ping";
 import { registerStartCommand } from "~/bot/commands/start";
 import { registerSubscribeCommand } from "~/bot/commands/subscribe";
 import { filtersMenu } from "~/bot/menus/filters";
+import { reposMenu } from "~/bot/menus/repos";
 import { rootMenu, menuButtonStyleTransformer } from "~/bot/menus/root";
 import { scheduleMenu } from "~/bot/menus/schedule";
 import {
@@ -52,7 +53,7 @@ const registerMenus = (): void => {
 
   rootMenu.register(subscriptionMenu);
   rootMenu.register(
-    [filtersMenu, scheduleMenu, timezoneMenu, subscriptionDeleteConfirmMenu],
+    [filtersMenu, reposMenu, scheduleMenu, timezoneMenu, subscriptionDeleteConfirmMenu],
     "subscription-detail"
   );
   registerAdminMenus();

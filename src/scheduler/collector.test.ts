@@ -1,11 +1,26 @@
 // Verifies collector tick orchestration without live GitHub calls.
 import { describe, expect, test } from "bun:test";
 
-import { runCollectorTick, type CollectorStore } from "~/scheduler/collector";
+import {
+  chooseAccountPollingMode,
+  runCollectorTick,
+  type CollectorStore
+} from "~/scheduler/collector";
 
 const account = {
   id: 1024,
   login: "octocat",
+  etag: null,
+  lastEventId: null,
+  consecutiveFailures: 0,
+  pausedUntil: null
+};
+
+const repo = {
+  id: 1296269,
+  accountId: account.id,
+  ownerLogin: account.login,
+  name: "hello-world",
   etag: null,
   lastEventId: null,
   consecutiveFailures: 0,
@@ -72,5 +87,81 @@ describe("collector tick", () => {
     expect(heartbeatWrites.map((date) => date.toISOString())).toEqual([
       "2026-05-20T12:10:00.000Z"
     ]);
+  });
+
+  test("polls selected repos instead of the user firehose when under threshold", async () => {
+    const polledRepos: string[] = [];
+    const store: CollectorStore = {
+      listGitHubAccountsForPolling: async () => [account],
+      listActiveSubscriptionRepoSelectionsForAccount: async () => [
+        { selectedRepos: ["hello-world"] }
+      ],
+      listGitHubReposForPolling: async (_accountId, names) =>
+        names.includes(repo.name) ? [repo] : [],
+      writeCollectorHeartbeat: async () => undefined
+    };
+
+    const result = await runCollectorTick({
+      store,
+      repoPollThreshold: 5,
+      pollAccount: async () => {
+        throw new Error("should not poll user firehose");
+      },
+      pollRepo: async (pollRepo) => {
+        polledRepos.push(pollRepo.name);
+
+        return {
+          status: "ok",
+          accountId: pollRepo.accountId,
+          login: `${pollRepo.ownerLogin}/${pollRepo.name}`,
+          fetchedCount: 2,
+          insertedCount: 1,
+          etag: "repo-etag",
+          lastEventId: "repo-event"
+        };
+      }
+    });
+
+    expect(polledRepos).toEqual(["hello-world"]);
+    expect(result.fetchedCount).toBe(2);
+    expect(result.insertedCount).toBe(1);
+  });
+});
+
+describe("chooseAccountPollingMode", () => {
+  test("uses user firehose when any active subscription watches all repos", () => {
+    expect(
+      chooseAccountPollingMode(
+        [
+          { selectedRepos: ["linux"] },
+          { selectedRepos: null }
+        ],
+        5
+      )
+    ).toEqual({ type: "user" });
+  });
+
+  test("uses repo polling when selected repo union is at or below threshold", () => {
+    expect(
+      chooseAccountPollingMode(
+        [
+          { selectedRepos: ["linux", "git"] },
+          { selectedRepos: ["linux"] }
+        ],
+        5
+      )
+    ).toEqual({ type: "repos", repos: ["git", "linux"] });
+  });
+
+  test("falls back to user firehose when selected repo union exceeds threshold", () => {
+    expect(
+      chooseAccountPollingMode(
+        [
+          { selectedRepos: ["a", "b"] },
+          { selectedRepos: ["c"] }
+        ],
+        2
+      )
+    ).toEqual({ type: "user" });
   });
 });

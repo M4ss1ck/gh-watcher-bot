@@ -1,11 +1,12 @@
 // Contains all database access functions used by the application.
-import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 
 import { db } from "~/db/client";
 import {
   chats,
   events,
   githubAccounts,
+  githubRepos,
   kv,
   subscriptions,
   type ChatType,
@@ -32,9 +33,30 @@ export type GitHubAccountForPolling = {
   pausedUntil: Date | null;
 };
 
+export type GitHubRepoForPolling = {
+  id: number;
+  accountId: number;
+  ownerLogin: string;
+  name: string;
+  etag: string | null;
+  lastEventId: string | null;
+  consecutiveFailures: number;
+  pausedUntil: Date | null;
+};
+
+export type SubscriptionRepoSelection = {
+  selectedRepos: string[] | null;
+};
+
 export type UpsertGitHubAccountInput = {
   id: number;
   login: string;
+};
+
+export type UpsertGitHubRepoInput = {
+  id: number;
+  accountId: number;
+  name: string;
 };
 
 export type StoredGitHubEventInput = {
@@ -64,6 +86,23 @@ export type RecordGitHubAccountPollFailureInput = {
   pausedUntil: Date | null;
 };
 
+export type MarkGitHubRepoPollSucceededInput = {
+  repoId: number;
+  etag: string | null;
+  lastEventId: string | null;
+};
+
+export type MarkGitHubRepoPollNotModifiedInput = {
+  repoId: number;
+  etag: string | null;
+};
+
+export type RecordGitHubRepoPollFailureInput = {
+  repoId: number;
+  consecutiveFailures: number;
+  pausedUntil: Date | null;
+};
+
 export type KvWriteInput = {
   key: string;
   value: string;
@@ -77,6 +116,7 @@ export type CreateOrUpdateSubscriptionInput = {
   filters: SubscriptionFilters;
   schedulePreset: SchedulePreset;
   timezone: string;
+  selectedRepos?: string[] | null;
   createdByUserId: number;
   lastDeliveredAt?: Date | null;
 };
@@ -88,6 +128,7 @@ export type SubscriptionListItem = {
   preset: SubscriptionPreset;
   schedulePreset: SchedulePreset;
   timezone: string;
+  selectedRepos: string[] | null;
   paused: boolean;
   lastDeliveredAt: Date | null;
 };
@@ -106,6 +147,7 @@ export type SubscriptionDeliveryRecord = {
   accountId: number;
   accountLogin: string;
   filters: SubscriptionFilters;
+  selectedRepos: string[] | null;
   lastDeliveredAt: Date | null;
 };
 
@@ -218,6 +260,26 @@ export const upsertGitHubAccount = async (
     });
 };
 
+export const upsertGitHubRepo = async (
+  input: UpsertGitHubRepoInput
+): Promise<void> => {
+  await db
+    .insert(githubRepos)
+    .values({
+      id: input.id,
+      accountId: input.accountId,
+      name: input.name
+    })
+    .onConflictDoUpdate({
+      target: githubRepos.id,
+      set: {
+        accountId: input.accountId,
+        name: input.name,
+        pausedUntil: null
+      }
+    });
+};
+
 export const resolveOrCreateGitHubAccount = async (
   login: string,
   client: Pick<GitHubApiClient, "getUser">
@@ -226,6 +288,22 @@ export const resolveOrCreateGitHubAccount = async (
   await upsertGitHubAccount({ id: user.id, login: user.login });
 
   return user;
+};
+
+export const resolveOrCreateGitHubRepo = async (input: {
+  accountId: number;
+  owner: string;
+  repo: string;
+  client: Pick<GitHubApiClient, "getRepo">;
+}): Promise<{ id: number; name: string; fullName: string }> => {
+  const repo = await input.client.getRepo(input.owner, input.repo);
+  await upsertGitHubRepo({
+    id: repo.id,
+    accountId: input.accountId,
+    name: repo.name
+  });
+
+  return repo;
 };
 
 export const getGitHubAccountByLogin = async (
@@ -259,6 +337,41 @@ export const listGitHubAccountsForPolling = async (): Promise<
       pausedUntil: githubAccounts.pausedUntil
     })
     .from(githubAccounts);
+};
+
+export const listActiveSubscriptionRepoSelectionsForAccount = async (
+  accountId: number
+): Promise<SubscriptionRepoSelection[]> => {
+  return db
+    .select({
+      selectedRepos: subscriptions.selectedRepos
+    })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.accountId, accountId), eq(subscriptions.paused, false)));
+};
+
+export const listGitHubReposForPolling = async (
+  accountId: number,
+  names: string[]
+): Promise<GitHubRepoForPolling[]> => {
+  if (names.length === 0) {
+    return [];
+  }
+
+  return db
+    .select({
+      id: githubRepos.id,
+      accountId: githubRepos.accountId,
+      ownerLogin: githubAccounts.login,
+      name: githubRepos.name,
+      etag: githubRepos.etag,
+      lastEventId: githubRepos.lastEventId,
+      consecutiveFailures: githubRepos.consecutiveFailures,
+      pausedUntil: githubRepos.pausedUntil
+    })
+    .from(githubRepos)
+    .innerJoin(githubAccounts, eq(githubRepos.accountId, githubAccounts.id))
+    .where(and(eq(githubRepos.accountId, accountId), inArray(githubRepos.name, names)));
 };
 
 export const insertGitHubEvents = async (
@@ -325,6 +438,47 @@ export const recordGitHubAccountPollFailure = async (
     .where(eq(githubAccounts.id, input.accountId));
 };
 
+export const markGitHubRepoPollSucceeded = async (
+  input: MarkGitHubRepoPollSucceededInput
+): Promise<void> => {
+  await db
+    .update(githubRepos)
+    .set({
+      etag: input.etag,
+      lastEventId: input.lastEventId,
+      lastPolledAt: nowMs,
+      consecutiveFailures: 0,
+      pausedUntil: null
+    })
+    .where(eq(githubRepos.id, input.repoId));
+};
+
+export const markGitHubRepoPollNotModified = async (
+  input: MarkGitHubRepoPollNotModifiedInput
+): Promise<void> => {
+  await db
+    .update(githubRepos)
+    .set({
+      etag: input.etag,
+      lastPolledAt: nowMs,
+      consecutiveFailures: 0
+    })
+    .where(eq(githubRepos.id, input.repoId));
+};
+
+export const recordGitHubRepoPollFailure = async (
+  input: RecordGitHubRepoPollFailureInput
+): Promise<void> => {
+  await db
+    .update(githubRepos)
+    .set({
+      lastPolledAt: nowMs,
+      consecutiveFailures: input.consecutiveFailures,
+      pausedUntil: input.pausedUntil
+    })
+    .where(eq(githubRepos.id, input.repoId));
+};
+
 export const countEventsForAccount = async (accountId: number): Promise<number> => {
   const [row] = await db
     .select({ count: sql<number>`count(*)` })
@@ -345,6 +499,7 @@ export const listSubscriptionsForChat = async (
       preset: subscriptions.preset,
       schedulePreset: subscriptions.schedulePreset,
       timezone: subscriptions.timezone,
+      selectedRepos: subscriptions.selectedRepos,
       paused: subscriptions.paused,
       lastDeliveredAt: subscriptions.lastDeliveredAt
     })
@@ -365,6 +520,7 @@ export const createOrUpdateSubscription = async (
       filters: input.filters,
       schedulePreset: input.schedulePreset,
       timezone: input.timezone,
+      selectedRepos: input.selectedRepos ?? null,
       paused: false,
       createdByUserId: input.createdByUserId,
       lastDeliveredAt: input.lastDeliveredAt ?? null
@@ -376,6 +532,7 @@ export const createOrUpdateSubscription = async (
         filters: input.filters,
         schedulePreset: input.schedulePreset,
         timezone: input.timezone,
+        selectedRepos: input.selectedRepos ?? null,
         paused: false
       }
     })
@@ -435,6 +592,16 @@ export const updateSubscriptionSchedule = async (
     .where(eq(subscriptions.id, id));
 };
 
+export const updateSubscriptionSelectedRepos = async (
+  id: number,
+  selectedRepos: string[] | null
+): Promise<void> => {
+  await db
+    .update(subscriptions)
+    .set({ selectedRepos })
+    .where(eq(subscriptions.id, id));
+};
+
 export const listActiveSubscriptionSchedules = async (): Promise<
   SubscriptionScheduleItem[]
 > => {
@@ -460,6 +627,7 @@ export const getSubscriptionForDelivery = async (
       accountId: subscriptions.accountId,
       accountLogin: githubAccounts.login,
       filters: subscriptions.filters,
+      selectedRepos: subscriptions.selectedRepos,
       lastDeliveredAt: subscriptions.lastDeliveredAt
     })
     .from(subscriptions)

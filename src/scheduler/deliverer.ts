@@ -114,6 +114,9 @@ const newestCreatedAt = (events: StoredEvent[]): Date => {
   );
 };
 
+const repoNameMatchesSelection = (repoName: string, selectedRepo: string): boolean =>
+  repoName === selectedRepo || repoName.endsWith(`/${selectedRepo}`);
+
 const getTelegramErrorCode = (error: unknown): number | null => {
   if (typeof error !== "object" || error === null) {
     return null;
@@ -179,7 +182,15 @@ const executeDeliveryTask = async (
     subscription.accountId,
     subscription.lastDeliveredAt
   );
-  const matchingEvents = events.filter((event) =>
+  const selectedRepoEvents =
+    subscription.selectedRepos === null
+      ? events
+      : events.filter((event) =>
+          subscription.selectedRepos?.some((repo) =>
+            repoNameMatchesSelection(event.repoName, repo)
+          )
+        );
+  const matchingEvents = selectedRepoEvents.filter((event) =>
     applyFilters(subscription.filters, event)
   );
 

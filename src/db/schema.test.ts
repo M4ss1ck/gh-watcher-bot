@@ -6,6 +6,7 @@ import {
   chats,
   events,
   githubAccounts,
+  githubRepos,
   kv,
   subscriptions
 } from "~/db/schema";
@@ -13,6 +14,7 @@ import {
 describe("database schema", () => {
   test("defines the required table names", () => {
     expect(getTableName(githubAccounts)).toBe("github_accounts");
+    expect(getTableName(githubRepos)).toBe("github_repos");
     expect(getTableName(events)).toBe("events");
     expect(getTableName(chats)).toBe("chats");
     expect(getTableName(subscriptions)).toBe("subscriptions");
@@ -26,6 +28,18 @@ describe("database schema", () => {
       "etag",
       "lastPolledAt",
       "lastEventId",
+      "consecutiveFailures",
+      "pausedUntil",
+      "createdAt"
+    ]);
+
+    expect(Object.keys(githubRepos)).toEqual([
+      "id",
+      "accountId",
+      "name",
+      "etag",
+      "lastEventId",
+      "lastPolledAt",
       "consecutiveFailures",
       "pausedUntil",
       "createdAt"
@@ -62,6 +76,7 @@ describe("database schema", () => {
       "schedulePreset",
       "timezone",
       "lastDeliveredAt",
+      "selectedRepos",
       "paused",
       "createdAt",
       "createdByUserId"

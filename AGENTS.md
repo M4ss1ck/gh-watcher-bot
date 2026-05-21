@@ -21,7 +21,7 @@ Do not add: webhooks, Express/Hono/any HTTP server, Redis, BullMQ, conversations
 1. Single process. Single Bun runtime. No multi-replica. The bot is the collector, the scheduler, and the deliverer.
 2. No public HTTP endpoint. Bot talks to Telegram (long polling) and GitHub (REST). Nothing inbound.
 3. Polling only. No GitHub webhooks. No GitHub Apps (deferred to a future rework).
-4. Public events only. No PAT/token handling for private events in v1.
+4. Public GitHub data only. No PAT/token handling for private events in v1.
 5. Cursor-based delivery: a subscription has `lastDeliveredAt`; delivery sends events newer than that and advances the cursor on success. No per-event delivery log.
 6. Health and metrics are Telegram admin commands, not HTTP endpoints. Docker `HEALTHCHECK` runs a `bun run healthcheck.ts` script that reads the collector heartbeat from the DB.
 
@@ -35,6 +35,7 @@ Do not add: webhooks, Express/Hono/any HTTP server, Redis, BullMQ, conversations
       root.ts             # /subscribe with no args: list + add
       subscription.ts     # subscription detail menu (per-sub actions)
       filters.ts          # filter editor menu
+      repos.ts            # repo picker menu
       schedule.ts         # schedule preset picker
       timezone.ts         # timezone picker
     /commands
@@ -49,7 +50,7 @@ Do not add: webhooks, Express/Hono/any HTTP server, Redis, BullMQ, conversations
       chatRegistration.ts # registers chat on first interaction, handles my_chat_member
   /github
     client.ts             # Octokit with retry + throttling plugins
-    poller.ts             # fetches /users/{login}/events with ETag
+    poller.ts             # fetches user or repo events with ETag
     types.ts              # narrow types for the event payloads we care about
   /db
     schema.ts             # Drizzle schema (see below)
@@ -89,9 +90,10 @@ Do not add: webhooks, Express/Hono/any HTTP server, Redis, BullMQ, conversations
 Use exactly these tables. Field names match.
 
 - `github_accounts`: `id` (PK, GitHub numeric user ID), `login` (current username, unique), `etag`, `lastPolledAt`, `lastEventId`, `consecutiveFailures` (default 0), `pausedUntil` (nullable, set on backoff), `createdAt`.
+- `github_repos`: `id` (PK, GitHub numeric repo ID), `accountId` (FK → github_accounts, cascade delete), `name` (repo name without owner), `etag`, `lastEventId`, `lastPolledAt`, `consecutiveFailures` (default 0), `pausedUntil` (nullable), `createdAt`. Unique on `(accountId, name)`.
 - `events`: `id` (PK, GitHub event ID string), `accountId` (FK → github_accounts, cascade delete), `type`, `repoName`, `actorLogin`, `payload` (JSON), `createdAt` (GitHub timestamp), `ingestedAt`. Index on `(accountId, createdAt)` and `type`.
 - `chats`: `id` (PK, Telegram chat ID, signed 64-bit), `type` ("private"|"group"|"supergroup"|"channel"), `title`, `addedByUserId`, `active` (default true), `banned` (default false), `addedAt`, `deactivatedAt`.
-- `subscriptions`: `id` (PK auto), `chatId` (FK → chats, cascade), `accountId` (FK → github_accounts, restrict), `preset` ("firehose"|"releases_only"|"prs_and_releases"|"code_activity"|"new_stuff"|"custom"), `filters` (JSON), `schedulePreset` ("hourly"|"every_6h"|"daily_09"|"daily_18"|"weekly_mon_09"), `timezone` (default "UTC"), `lastDeliveredAt` (nullable cursor), `paused` (default false), `createdAt`, `createdByUserId`. Unique on `(chatId, accountId)`.
+- `subscriptions`: `id` (PK auto), `chatId` (FK → chats, cascade), `accountId` (FK → github_accounts, restrict), `preset` ("firehose"|"releases_only"|"prs_and_releases"|"code_activity"|"new_stuff"|"custom"), `filters` (JSON), `schedulePreset` ("hourly"|"every_6h"|"daily_09"|"daily_18"|"weekly_mon_09"), `timezone` (default "UTC"), `lastDeliveredAt` (nullable cursor), `selectedRepos` (JSON array of repo names, nullable; `NULL` means all repos), `paused` (default false), `createdAt`, `createdByUserId`. Unique on `(chatId, accountId)`.
 - `kv`: `key` (PK), `value`, `updatedAt`. Used for heartbeats and counters.
 
 No `nextDeliveryAt` field — croner owns scheduling state.
@@ -100,7 +102,8 @@ No `delivery_log` table — cursor is the source of truth.
 ## Polling and collection
 
 - Poll interval: every 10 minutes (`*/10 * * * *`), configurable via `POLL_INTERVAL_CRON` env.
-- Endpoint: `GET /users/{login}/events`, per `github_accounts` row, with `If-None-Match: <etag>` if etag stored.
+- Endpoints: `GET /users/{login}/events` for owner firehose polling, or `GET /repos/{owner}/{repo}/events` for selected repo polling, with `If-None-Match: <etag>` if etag stored.
+- Polling mode is computed per owner from active subscriptions. If any active subscription has `selectedRepos = NULL`, poll the owner firehose. Otherwise union selected repos across subscriptions; if the union size is `<= REPO_POLL_THRESHOLD`, poll each repo with its own `github_repos` cursor. If the union is larger, poll the owner firehose and narrow at delivery.
 - On 304: increment a counter, skip. On 200: parse, filter to events newer than `lastEventId`, insert into `events` table, update `etag` and `lastEventId`.
 - On 404 (user deleted/renamed): mark account `consecutiveFailures += 1`. After 5 consecutive failures, set `pausedUntil = now + 24h` and log warn. Re-poll after `pausedUntil` passes.
 - On 5xx / network errors: Octokit retry plugin handles automatically. After plugin gives up, increment `consecutiveFailures`.
@@ -293,6 +296,7 @@ Optional with defaults:
 - `NODE_ENV` (default "development")
 - `POLL_INTERVAL_CRON` (default `*/10 * * * *`)
 - `MAX_SUBS_PER_CHAT` (default 20)
+- `REPO_POLL_THRESHOLD` (default 5)
 - `GITHUB_TOKEN` — if set, used to authenticate GitHub requests for the higher rate limit. Still public events only.
 
 `/.env.example` lists all of these with safe placeholder values.

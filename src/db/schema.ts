@@ -79,6 +79,31 @@ export const githubAccounts = sqliteTable("github_accounts", {
     .default(nowMs)
 });
 
+export const githubRepos = sqliteTable(
+  "github_repos",
+  {
+    id: integer("id").primaryKey(),
+    accountId: integer("accountId")
+      .notNull()
+      .references(() => githubAccounts.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    etag: text("etag"),
+    lastEventId: text("lastEventId"),
+    lastPolledAt: integer("lastPolledAt", { mode: "timestamp_ms" }),
+    consecutiveFailures: integer("consecutiveFailures").notNull().default(0),
+    pausedUntil: integer("pausedUntil", { mode: "timestamp_ms" }),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" })
+      .notNull()
+      .default(nowMs)
+  },
+  (table) => [
+    uniqueIndex("github_repos_account_id_name_unique").on(
+      table.accountId,
+      table.name
+    )
+  ]
+);
+
 export const events = sqliteTable(
   "events",
   {
@@ -133,6 +158,7 @@ export const subscriptions = sqliteTable(
     schedulePreset: text("schedulePreset", { enum: schedulePresetValues }).notNull(),
     timezone: text("timezone").notNull().default("UTC"),
     lastDeliveredAt: integer("lastDeliveredAt", { mode: "timestamp_ms" }),
+    selectedRepos: text("selectedRepos", { mode: "json" }).$type<string[] | null>(),
     paused: integer("paused", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("createdAt", { mode: "timestamp_ms" })
       .notNull()

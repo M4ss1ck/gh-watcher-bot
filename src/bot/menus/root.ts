@@ -63,6 +63,7 @@ const setSelectionFromListItem = (ctx: Context, item: SubscriptionListItem): voi
     preset: item.preset,
     schedulePreset: item.schedulePreset,
     timezone: item.timezone,
+    selectedRepos: item.selectedRepos,
     paused: item.paused,
     lastDeliveredAt: item.lastDeliveredAt
   });
@@ -143,6 +144,7 @@ export const rootMenu = new Menu<Context>(rootMenuId)
             preset: item.preset,
             schedulePreset: item.schedulePreset,
             timezone: item.timezone,
+            selectedRepos: item.selectedRepos,
             paused: item.paused,
             lastDeliveredAt: item.lastDeliveredAt
           }));
@@ -171,6 +173,7 @@ export const buildSubscriptionMenuTextFromState = (
   `Preset: ${state.preset}`,
   `Schedule: ${state.schedulePreset}`,
   `Timezone: ${state.timezone}`,
+  `Repos: ${state.selectedRepos === null ? "all repos" : `${state.selectedRepos.length} selected`}`,
   `Status: ${state.paused ? "paused" : "active"}`,
   `Last delivery: ${state.lastDeliveredAt === null ? "never" : state.lastDeliveredAt.toISOString()}`
 ].join("\n");
