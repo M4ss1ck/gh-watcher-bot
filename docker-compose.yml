@@ -11,3 +11,25 @@ services:
     volumes:
       - ./data:/app/data
     stop_grace_period: 30s
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./src
+          target: /app/src
+        - action: sync+restart
+          path: ./scripts
+          target: /app/scripts
+        - action: sync+restart
+          path: ./drizzle.config.ts
+          target: /app/drizzle.config.ts
+        - action: sync+restart
+          path: ./tsconfig.json
+          target: /app/tsconfig.json
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./bun.lock
+        - action: rebuild
+          path: ./Dockerfile
+        - action: rebuild
+          path: ./entrypoint.sh
