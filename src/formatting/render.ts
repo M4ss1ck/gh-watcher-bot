@@ -47,10 +47,22 @@ export const renderAccountSummary = (
   ].join("\n");
 };
 
-const renderEvent = (event: StoredEvent): string => {
+const githubProfileUrl = (login: string): string =>
+  `https://github.com/${encodeURIComponent(login)}`;
+
+const githubRepoUrl = (repoName: string): string =>
+  `https://github.com/${repoName}`;
+
+const formatRepoHeader = (repoName: string): string =>
+  `<b><a href="${escapeAttribute(githubRepoUrl(repoName))}">${escapeHtml(repoName)}</a></b>`;
+
+const formatActorLink = (login: string): string =>
+  `<a href="${escapeAttribute(githubProfileUrl(login))}">${escapeHtml(login)}</a>`;
+
+const renderEventLine = (event: StoredEvent): string => {
   const summary = summarizeEvent(event);
   const lines = [
-    `• <b>${escapeHtml(event.repoName)}</b> · ${escapeHtml(event.actorLogin)} ${escapeHtml(summary.title)}`
+    `• ${formatActorLink(event.actorLogin)} ${escapeHtml(summary.title)}`
   ];
 
   if (summary.detail !== null) {
@@ -62,6 +74,18 @@ const renderEvent = (event: StoredEvent): string => {
   }
 
   return lines.join("\n");
+};
+
+const groupByRepo = (events: StoredEvent[]): Map<string, StoredEvent[]> => {
+  const grouped = new Map<string, StoredEvent[]>();
+
+  for (const event of events) {
+    const existing = grouped.get(event.repoName) ?? [];
+    existing.push(event);
+    grouped.set(event.repoName, existing);
+  }
+
+  return grouped;
 };
 
 export const renderEventDigest = (
@@ -76,16 +100,26 @@ export const renderEventDigest = (
   const header = "<b>GitHub activity digest</b>";
   const messages: string[] = [];
   let current = header;
+  let currentRepo: string | null = null;
 
-  for (const event of events) {
-    const block = renderEvent(event);
-    const next = `${current}\n\n${block}`;
+  for (const [repoName, repoEvents] of groupByRepo(events)) {
+    const repoHeader = formatRepoHeader(repoName);
 
-    if (next.length > maxMessageLength && current !== header) {
-      messages.push(current);
-      current = `${header}\n\n${block}`;
-    } else {
-      current = next;
+    for (const event of repoEvents) {
+      const eventLine = renderEventLine(event);
+      const candidate =
+        currentRepo === repoName
+          ? `${current}\n${eventLine}`
+          : `${current}\n\n${repoHeader}\n${eventLine}`;
+
+      if (candidate.length > maxMessageLength && current !== header) {
+        messages.push(current);
+        current = `${header}\n\n${repoHeader}\n${eventLine}`;
+      } else {
+        current = candidate;
+      }
+
+      currentRepo = repoName;
     }
   }
 

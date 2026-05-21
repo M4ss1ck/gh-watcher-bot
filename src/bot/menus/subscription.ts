@@ -212,7 +212,9 @@ export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
         accountId: state.accountId,
         accountLogin: state.accountLogin,
         sendMessage: async (chatId, text) => {
-          await ctx.api.sendMessage(chatId, text);
+          await ctx.api.sendMessage(chatId, text, {
+            link_preview_options: { is_disabled: true }
+          });
         },
         reply: async (text) => {
           await ctx.reply(text);

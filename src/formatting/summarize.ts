@@ -94,14 +94,27 @@ const pullRequestSummary = (event: StoredEvent): EventSummary => {
   const pullRequest = event.payload.pull_request;
   const record = isRecord(pullRequest) ? pullRequest : {};
   const action = getString(event.payload, "action") ?? "updated";
-  const number = record.number;
-  const title = getRecordString(record, "title") ?? "untitled";
-  const url = getRecordString(record, "html_url");
-  const label = typeof number === "number" ? `#${number}` : title;
+  const recordNumber = typeof record.number === "number" ? record.number : null;
+  const payloadNumber =
+    typeof event.payload.number === "number" ? event.payload.number : null;
+  const number = recordNumber ?? payloadNumber;
+  const title = getRecordString(record, "title");
+  const head = getRecord(record, "head");
+  const base = getRecord(record, "base");
+  const headRef = head === null ? null : getRecordString(head, "ref");
+  const baseRef = base === null ? null : getRecordString(base, "ref");
+  const branchSummary =
+    headRef !== null && baseRef !== null ? `${headRef} → ${baseRef}` : null;
+  const label = number !== null ? `#${number}` : title ?? "";
+  const url =
+    getRecordString(record, "html_url") ??
+    (number !== null
+      ? `https://github.com/${event.repoName}/pull/${number}`
+      : null);
 
   return {
-    title: `${action} pull request ${label}`,
-    detail: typeof number === "number" ? title : null,
+    title: `${action} pull request ${label}`.trimEnd(),
+    detail: title ?? branchSummary,
     url
   };
 };
@@ -126,13 +139,19 @@ const issuesSummary = (event: StoredEvent): EventSummary => {
   const issue = event.payload.issue;
   const record = isRecord(issue) ? issue : {};
   const action = getString(event.payload, "action") ?? "updated";
-  const number = record.number;
-  const title = getRecordString(record, "title") ?? "issue";
+  const number = typeof record.number === "number" ? record.number : null;
+  const title = getRecordString(record, "title");
+  const label = number !== null ? `#${number}` : title ?? "issue";
+  const url =
+    getRecordString(record, "html_url") ??
+    (number !== null
+      ? `https://github.com/${event.repoName}/issues/${number}`
+      : null);
 
   return {
-    title: `${action} issue ${typeof number === "number" ? `#${number}` : title}`,
-    detail: typeof number === "number" ? title : null,
-    url: getRecordString(record, "html_url")
+    title: `${action} issue ${label}`,
+    detail: number !== null ? title : null,
+    url
   };
 };
 

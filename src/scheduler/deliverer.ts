@@ -287,7 +287,9 @@ export const runDeliveryTask = async (
 const createSendMessage =
   (api: Api): DeliverySendMessage =>
   async (chatId, text) => {
-    await api.sendMessage(chatId, text);
+    await api.sendMessage(chatId, text, {
+      link_preview_options: { is_disabled: true }
+    });
   };
 
 const getScheduleOverrideMap = (
