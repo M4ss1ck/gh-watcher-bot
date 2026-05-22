@@ -28,7 +28,8 @@ const main = async (): Promise<void> => {
     client: githubClient
   });
   const deliverer = startDeliverer({
-    api: bot.api
+    api: bot.api,
+    pollIntervalCron: env.POLL_INTERVAL_CRON
   });
   setDeliverer(deliverer);
 

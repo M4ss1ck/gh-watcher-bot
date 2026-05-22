@@ -22,6 +22,7 @@ import { requireChatAdminCallback } from "~/bot/middleware/chatAdminOnly";
 import { subscriptionPresetValues, type SubscriptionPreset } from "~/db/schema";
 import { updateSubscriptionFilters } from "~/db/queries";
 import { clonePresetFilters } from "~/filters/presets";
+import { formatSubscriptionPresetLabel } from "~/formatting/labels";
 import { logger } from "~/lib/logger";
 
 const isSavedSubscriptionPreset = (
@@ -40,7 +41,8 @@ export const selectableSubscriptionPresets =
 export const formatPresetOptionLabel = (
   current: SubscriptionPreset,
   preset: SavedSubscriptionPreset
-): string => `${current === preset ? "◉" : "○"} ${preset}`;
+): string =>
+  `${current === preset ? "◉" : "○"} ${formatSubscriptionPresetLabel(preset)}`;
 
 const syncDeliverer = async (): Promise<void> => {
   const deliverer = getDeliverer();

@@ -2,6 +2,10 @@
 import type { GitHubUserSummary, StoredEvent } from "~/github/types";
 import { summarizeEvent } from "~/formatting/summarize";
 import type { SchedulePreset, SubscriptionPreset } from "~/db/schema";
+import {
+  formatSchedulePresetLabel,
+  formatSubscriptionPresetLabel
+} from "~/formatting/labels";
 
 export type RenderOptions = {
   maxMessageLength?: number;
@@ -42,7 +46,7 @@ export const renderAccountSummary = (
   return [
     `<b>Watching <code>@${escapeHtml(summary.login)}</code></b> · <a href="${escapeAttribute(summary.htmlUrl)}">profile</a>`,
     `${escapeHtml(displayName)} · ${summary.publicRepos} ${repoLabel} · ${formatCompactCount(summary.followers)} followers`,
-    `Schedule: ${escapeHtml(subscription.schedulePreset)} (${escapeHtml(subscription.timezone)}) · Preset: ${escapeHtml(subscription.preset)}`,
+    `Schedule: ${escapeHtml(formatSchedulePresetLabel(subscription.schedulePreset))} (${escapeHtml(subscription.timezone)}) · Preset: ${escapeHtml(formatSubscriptionPresetLabel(subscription.preset))}`,
     "Tap /subscribe to manage."
   ].join("\n");
 };

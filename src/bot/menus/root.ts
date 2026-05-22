@@ -3,6 +3,11 @@ import { Menu, MenuRange } from "@grammyjs/menu";
 import type { Context, Transformer } from "grammy";
 
 import type { SubscriptionListItem } from "~/db/queries";
+import { formatDateTimeInTimeZone } from "~/formatting/dates";
+import {
+  formatSchedulePresetLabel,
+  formatSubscriptionPresetLabel
+} from "~/formatting/labels";
 import { escapeHtml } from "~/formatting/render";
 import { rootMenuId, subscriptionMenuId } from "~/bot/menus/ids";
 import {
@@ -36,7 +41,7 @@ export const formatSubscriptionListButton = (
   const status = item.paused ? "⏸" : "▶️";
   const paused = item.paused ? " (paused)" : "";
 
-  return `${status} @${item.accountLogin} · ${item.preset}, ${item.schedulePreset}${paused}`;
+  return `${status} @${item.accountLogin} · ${formatSubscriptionPresetLabel(item.preset)}, ${formatSchedulePresetLabel(item.schedulePreset)}${paused}`;
 };
 
 export const menuKeyFromContext = (ctx: Context): MenuKey | null => {
@@ -192,12 +197,12 @@ export const buildSubscriptionMenuTextFromState = (
   state: SubscriptionMenuState
 ): string => [
   `<code>@${escapeHtml(state.accountLogin)}</code>`,
-  `Preset: ${state.preset}`,
-  `Schedule: ${state.schedulePreset}`,
+  `Preset: ${formatSubscriptionPresetLabel(state.preset)}`,
+  `Schedule: ${formatSchedulePresetLabel(state.schedulePreset)}`,
   `Timezone: ${state.timezone}`,
   `Repos: ${state.selectedRepos === null ? "all repos" : `${state.selectedRepos.length} selected`}`,
   `Status: ${state.paused ? "paused" : "active"}`,
-  `Last delivery: ${state.lastDeliveredAt === null ? "never" : state.lastDeliveredAt.toISOString()}`
+  `Last delivery: ${state.lastDeliveredAt === null ? "never" : formatDateTimeInTimeZone(state.lastDeliveredAt, state.timezone)}`
 ].join("\n");
 
 export const createStaticRange = (): MenuRange<Context> => new MenuRange<Context>();

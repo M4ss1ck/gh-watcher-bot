@@ -117,4 +117,36 @@ describe("runSubscriptionPreview", () => {
       "Could not refresh <code>@torvalds</code> before preview. GitHub returned 403."
     ]);
   });
+
+  test("reports paused polling in the subscription timezone", async () => {
+    const replies: string[] = [];
+
+    await runSubscriptionPreview({
+      subscriptionId: 91,
+      accountId: account.id,
+      accountLogin: account.login,
+      timezone: "America/Santiago",
+      client,
+      getAccountById: async () => account,
+      pollAccount: async () => ({
+        status: "skipped_paused",
+        accountId: account.id,
+        login: account.login,
+        fetchedCount: 0,
+        insertedCount: 0,
+        pausedUntil: new Date("2026-05-20T12:00:00Z")
+      }),
+      deliver: async () => {
+        throw new Error("should not deliver");
+      },
+      sendMessage: async () => undefined,
+      reply: async (text) => {
+        replies.push(text);
+      }
+    });
+
+    expect(replies).toEqual([
+      "GitHub polling for <code>@torvalds</code> is paused until 2026-05-20 08:00 America/Santiago."
+    ]);
+  });
 });

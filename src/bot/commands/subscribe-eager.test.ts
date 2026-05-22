@@ -128,15 +128,15 @@ describe("/subscribe eager creation", () => {
       [
         "<b>Watching <code>@octocat</code></b> · <a href=\"https://github.com/octocat\">profile</a>",
         "The Octocat · 8 public repos · 12k followers",
-        "Schedule: hourly (UTC) · Preset: firehose",
+        "Schedule: Hourly (UTC) · Preset: Firehose",
         "Tap /subscribe to manage."
       ].join("\n")
     );
     expect(replies).toContain(
       [
         "<code>@octocat</code>",
-        "Preset: firehose",
-        "Schedule: hourly",
+        "Preset: Firehose",
+        "Schedule: Hourly",
         "Timezone: UTC",
         "Repos: all repos",
         "Status: active",

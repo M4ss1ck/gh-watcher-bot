@@ -70,6 +70,7 @@ export type StartDelivererOptions = {
   api: Api;
   store?: DelivererStore;
   scheduleOverrides?: DeliveryScheduleOverride[];
+  pollIntervalCron?: string;
   runImmediately?: boolean;
 };
 
@@ -325,7 +326,7 @@ export const startDeliverer = (options: StartDelivererOptions): Deliverer => {
 
     const cronExpression =
       scheduleOverrides.get(item.id) ??
-      getScheduleCronExpression(item.schedulePreset);
+      getScheduleCronExpression(item.schedulePreset, options.pollIntervalCron);
     const job = new Cron(
       cronExpression,
       {

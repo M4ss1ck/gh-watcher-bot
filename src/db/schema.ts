@@ -18,6 +18,7 @@ export const subscriptionPresetValues = [
 ] as const;
 
 export const schedulePresetValues = [
+  "as_fetched",
   "hourly",
   "every_6h",
   "daily_09",

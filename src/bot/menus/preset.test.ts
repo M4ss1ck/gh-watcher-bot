@@ -27,10 +27,10 @@ describe("subscription preset menu helpers", () => {
 
   test("formats selected and unselected preset options", () => {
     expect(formatPresetOptionLabel("code_activity", "code_activity")).toBe(
-      "◉ code_activity"
+      "◉ Code activity"
     );
     expect(formatPresetOptionLabel("firehose", "releases_only")).toBe(
-      "○ releases_only"
+      "○ Releases only"
     );
   });
 

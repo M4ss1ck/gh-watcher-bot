@@ -2,7 +2,6 @@
 import { Menu } from "@grammyjs/menu";
 import type { Context } from "grammy";
 
-import { schedulePresetValues, type SchedulePreset } from "~/db/schema";
 import { getDeliverer } from "~/bot/menus/deps";
 import { scheduleMenuId, subscriptionMenuId } from "~/bot/menus/ids";
 import {
@@ -14,9 +13,13 @@ import {
   getSelectedSubscription,
   updateSelectedSubscription
 } from "~/bot/menus/state";
+import { isAdminUserId } from "~/bot/middleware/adminOnly";
 import { requireChatAdminCallback } from "~/bot/middleware/chatAdminOnly";
+import type { SchedulePreset } from "~/db/schema";
 import { updateSubscriptionSchedule } from "~/db/queries";
+import { formatSchedulePresetLabel } from "~/formatting/labels";
 import { logger } from "~/lib/logger";
+import { getVisibleSchedulePresetValues } from "~/scheduler/presets";
 
 const setSchedule = (ctx: Context, schedulePreset: SchedulePreset): void => {
   const key = menuKeyFromContext(ctx);
@@ -45,9 +48,9 @@ export const scheduleMenu = new Menu<Context>(scheduleMenuId)
     const key = menuKeyFromContext(ctx);
     const state = key === null ? null : getSelectedSubscription(key);
 
-    for (const preset of schedulePresetValues) {
+    for (const preset of getVisibleSchedulePresetValues(isAdminUserId(ctx.from?.id))) {
       const selected = state?.schedulePreset === preset;
-      range.text(`${selected ? "◉" : "○"} ${preset}`, async (menuCtx) => {
+      range.text(`${selected ? "◉" : "○"} ${formatSchedulePresetLabel(preset)}`, async (menuCtx) => {
         if (!(await requireChatAdminCallback(menuCtx))) {
           return;
         }

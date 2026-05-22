@@ -30,6 +30,7 @@ import {
 } from "~/db/queries";
 import type { GitHubAccountForPolling } from "~/db/queries";
 import { escapeHtml } from "~/formatting/render";
+import { formatDateTimeInTimeZone } from "~/formatting/dates";
 import {
   pollGitHubAccount,
   type GitHubEventsClient,
@@ -60,6 +61,7 @@ export type SubscriptionPreviewOptions = {
   deliver?: PreviewDeliver;
   sendMessage: DeliverySendMessage;
   reply: (text: string) => Promise<void>;
+  timezone?: string;
 };
 
 export const buildSubscriptionMenuText = (ctx: Context): string => {
@@ -136,7 +138,7 @@ export const runSubscriptionPreview = async (
 
   if (pollResult.status === "skipped_paused") {
     await options.reply(
-      `GitHub polling for ${formatGitHubMention(options.accountLogin)} is paused until ${pollResult.pausedUntil.toISOString()}.`
+      `GitHub polling for ${formatGitHubMention(options.accountLogin)} is paused until ${formatDateTimeInTimeZone(pollResult.pausedUntil, options.timezone ?? "UTC")}.`
     );
     return null;
   }
@@ -223,6 +225,7 @@ export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
         subscriptionId: state.id,
         accountId: state.accountId,
         accountLogin: state.accountLogin,
+        timezone: state.timezone,
         sendMessage: async (chatId, text) => {
           await ctx.api.sendMessage(chatId, text, {
             link_preview_options: { is_disabled: true }

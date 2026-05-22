@@ -17,12 +17,12 @@ import type {
   AdminChatListItem,
   AdminSubscriptionListItem
 } from "~/db/queries";
-import type { MetricsSnapshot } from "~/lib/metrics";
+import { formatSchedulePresetLabel } from "~/formatting/labels";
 import { escapeHtml } from "~/formatting/render";
 import { createGitHubClient, getGitHubRateLimitRemaining } from "~/github/client";
 import { pollGitHubAccount } from "~/github/poller";
 import { logger } from "~/lib/logger";
-import { getMetricsSnapshot } from "~/lib/metrics";
+import { getMetricsSnapshot, type MetricsSnapshot } from "~/lib/metrics";
 import { runDeliveryTask } from "~/scheduler/deliverer";
 
 export { isAdminUserId };
@@ -74,7 +74,8 @@ export const formatAdminSubscriptionButton = (
     AdminSubscriptionListItem,
     "id" | "accountLogin" | "schedulePreset"
   >
-): string => `#${item.id} @${item.accountLogin} ${item.schedulePreset}`;
+): string =>
+  `#${item.id} @${item.accountLogin} ${formatSchedulePresetLabel(item.schedulePreset)}`;
 
 export const buildBroadcastConfirmationText = (
   text: string,

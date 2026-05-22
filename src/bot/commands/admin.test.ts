@@ -59,9 +59,9 @@ describe("admin helpers", () => {
       formatAdminSubscriptionButton({
         id: 3,
         accountLogin: "torvalds",
-        schedulePreset: "hourly"
+        schedulePreset: "as_fetched"
       })
-    ).toBe("#3 @torvalds hourly");
+    ).toBe("#3 @torvalds As fetched");
   });
 
   test("builds broadcast confirmation text without echoing huge messages", () => {

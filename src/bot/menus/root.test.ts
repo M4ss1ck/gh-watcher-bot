@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 
 import { applyMenuButtonStyles } from "~/bot/menus/root";
 import {
+  buildSubscriptionMenuTextFromState,
   buildRootMenuText,
   formatSubscriptionListButton
 } from "~/bot/menus/root";
@@ -27,11 +28,37 @@ describe("subscription root menu helpers", () => {
         paused: false,
         lastDeliveredAt: null
       } satisfies SubscriptionListItem)
-    ).toBe("▶️ @torvalds · releases_only, daily_09");
+    ).toBe("▶️ @torvalds · Releases only, Daily 09:00");
   });
 
   test("builds root header text", () => {
     expect(buildRootMenuText()).toBe("Subscriptions in this chat");
+  });
+
+  test("formats subscription detail text for humans", () => {
+    expect(
+      buildSubscriptionMenuTextFromState({
+        id: 10,
+        accountId: 1026,
+        accountLogin: "torvalds",
+        preset: "prs_and_releases",
+        schedulePreset: "as_fetched",
+        timezone: "America/Santiago",
+        selectedRepos: null,
+        paused: false,
+        lastDeliveredAt: new Date("2026-05-20T12:30:00Z")
+      })
+    ).toBe(
+      [
+        "<code>@torvalds</code>",
+        "Preset: Pull requests and releases",
+        "Schedule: As fetched",
+        "Timezone: America/Santiago",
+        "Repos: all repos",
+        "Status: active",
+        "Last delivery: 2026-05-20 08:30 America/Santiago"
+      ].join("\n")
+    );
   });
 
   test("applies Bot API button styles to known labels", () => {
