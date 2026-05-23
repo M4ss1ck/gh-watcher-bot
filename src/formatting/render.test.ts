@@ -16,7 +16,8 @@ describe("summarizeEvent", () => {
     expect(summarizeEvent(pushEvent)).toEqual({
       title: "pushed 2 commits to main",
       detail: "Fix parser <edge>; Add tests & docs",
-      url: "https://github.com/octocat/hello-world/commit/abc123456789"
+      url: "https://github.com/octocat/hello-world/commit/abc123456789",
+      extra: []
     });
   });
 
@@ -53,8 +54,54 @@ describe("summarizeEvent", () => {
     expect(summarizeEvent(stripped)).toEqual({
       title: "merged pull request #2",
       detail: "feat/migrate-to-grammy → master",
-      url: "https://github.com/M4ss1ck/anime-bot/pull/2"
+      url: "https://github.com/M4ss1ck/anime-bot/pull/2",
+      extra: []
     });
+  });
+
+  test("uses pull request enrichment when provided", () => {
+    const event: StoredEvent = {
+      id: "pr-enriched",
+      accountId: 1,
+      type: "PullRequestEvent",
+      repoName: "M4ss1ck/maibuk",
+      actorLogin: "M4ss1ck",
+      payload: {
+        action: "merged",
+        number: 39,
+        pull_request: {
+          url: "https://api.github.com/repos/M4ss1ck/maibuk/pulls/39",
+          number: 39,
+          head: { ref: "feat/paste-cleanup" },
+          base: { ref: "main" }
+        }
+      },
+      createdAt: new Date("2026-05-20T12:00:00Z")
+    };
+
+    const summary = summarizeEvent(event, {
+      pullRequestDetail: {
+        number: 39,
+        title: "Clean up paste handler",
+        body: "Fix flicker when pasting long text.",
+        htmlUrl: "https://github.com/M4ss1ck/maibuk/pull/39",
+        merged: true,
+        mergedBy: "M4ss1ck",
+        additions: 42,
+        deletions: 7,
+        changedFiles: 3,
+        commits: 5
+      }
+    });
+
+    expect(summary.title).toBe("merged pull request #39");
+    expect(summary.detail).toBe("Clean up paste handler (feat/paste-cleanup → main)");
+    expect(summary.url).toBe("https://github.com/M4ss1ck/maibuk/pull/39");
+    expect(summary.extra).toEqual([
+      "+42 −7 across 3 files · 5 commits",
+      "merged by M4ss1ck",
+      "Fix flicker when pasting long text."
+    ]);
   });
 });
 

@@ -1,12 +1,13 @@
 // Summarizes noisy event payloads before rendering.
 import type { GitHubEventPayload } from "~/db/schema";
-import type { StoredEvent } from "~/github/types";
+import type { GitHubPullRequestDetail, StoredEvent } from "~/github/types";
 import { normalizeBranchName } from "~/filters/apply";
 
 export type EventSummary = {
   title: string;
   detail: string | null;
   url: string | null;
+  extra: string[];
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -86,36 +87,65 @@ const pushSummary = (event: StoredEvent): EventSummary => {
   return {
     title: `pushed ${commitCount} ${noun} to ${branch}`,
     detail: pushDetail(event.payload),
-    url: firstCommitUrl(event.payload)
+    url: firstCommitUrl(event.payload),
+    extra: []
   };
 };
 
-const pullRequestSummary = (event: StoredEvent): EventSummary => {
+const truncate = (value: string, max: number): string =>
+  value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`;
+
+const pullRequestSummary = (
+  event: StoredEvent,
+  detail: GitHubPullRequestDetail | null
+): EventSummary => {
   const pullRequest = event.payload.pull_request;
   const record = isRecord(pullRequest) ? pullRequest : {};
   const action = getString(event.payload, "action") ?? "updated";
   const recordNumber = typeof record.number === "number" ? record.number : null;
   const payloadNumber =
     typeof event.payload.number === "number" ? event.payload.number : null;
-  const number = recordNumber ?? payloadNumber;
-  const title = getRecordString(record, "title");
+  const number = detail?.number ?? recordNumber ?? payloadNumber;
   const head = getRecord(record, "head");
   const base = getRecord(record, "base");
   const headRef = head === null ? null : getRecordString(head, "ref");
   const baseRef = base === null ? null : getRecordString(base, "ref");
   const branchSummary =
     headRef !== null && baseRef !== null ? `${headRef} → ${baseRef}` : null;
-  const label = number !== null ? `#${number}` : title ?? "";
+  const enrichedTitle = detail?.title ?? null;
+  const label = number !== null ? `#${number}` : enrichedTitle ?? "";
   const url =
+    detail?.htmlUrl ??
     getRecordString(record, "html_url") ??
     (number !== null
       ? `https://github.com/${event.repoName}/pull/${number}`
       : null);
 
+  const detailLine =
+    enrichedTitle !== null && branchSummary !== null
+      ? `${enrichedTitle} (${branchSummary})`
+      : enrichedTitle ?? branchSummary;
+
+  const extra: string[] = [];
+
+  if (detail !== null) {
+    const stats = `+${detail.additions} −${detail.deletions} across ${detail.changedFiles} file${detail.changedFiles === 1 ? "" : "s"} · ${detail.commits} commit${detail.commits === 1 ? "" : "s"}`;
+    extra.push(stats);
+
+    if (detail.mergedBy !== null && action === "merged") {
+      extra.push(`merged by ${detail.mergedBy}`);
+    }
+
+    if (detail.body !== null && detail.body.trim() !== "") {
+      extra.push(truncate(detail.body.trim().replaceAll(/\s+/g, " "), 240));
+    }
+  }
+
   return {
     title: `${action} pull request ${label}`.trimEnd(),
-    detail: title ?? branchSummary,
-    url
+    detail: detailLine,
+    url,
+    extra
   };
 };
 
@@ -131,7 +161,8 @@ const releaseSummary = (event: StoredEvent): EventSummary => {
   return {
     title: `${action} release ${name}`,
     detail: null,
-    url: getRecordString(record, "html_url")
+    url: getRecordString(record, "html_url"),
+    extra: []
   };
 };
 
@@ -151,7 +182,8 @@ const issuesSummary = (event: StoredEvent): EventSummary => {
   return {
     title: `${action} issue ${label}`,
     detail: number !== null ? title : null,
-    url
+    url,
+    extra: []
   };
 };
 
@@ -162,7 +194,8 @@ const createSummary = (event: StoredEvent): EventSummary => {
   return {
     title: `created ${refType}${ref === null ? "" : ` ${ref}`}`,
     detail: null,
-    url: null
+    url: null,
+    extra: []
   };
 };
 
@@ -173,16 +206,24 @@ const forkSummary = (event: StoredEvent): EventSummary => {
   return {
     title: `forked repository${fullName === null ? "" : ` to ${fullName}`}`,
     detail: null,
-    url: null
+    url: null,
+    extra: []
   };
 };
 
-export const summarizeEvent = (event: StoredEvent): EventSummary => {
+export type SummarizeOptions = {
+  pullRequestDetail?: GitHubPullRequestDetail | null;
+};
+
+export const summarizeEvent = (
+  event: StoredEvent,
+  options: SummarizeOptions = {}
+): EventSummary => {
   switch (event.type) {
     case "PushEvent":
       return pushSummary(event);
     case "PullRequestEvent":
-      return pullRequestSummary(event);
+      return pullRequestSummary(event, options.pullRequestDetail ?? null);
     case "ReleaseEvent":
       return releaseSummary(event);
     case "IssuesEvent":
@@ -191,7 +232,8 @@ export const summarizeEvent = (event: StoredEvent): EventSummary => {
       return {
         title: "starred repository",
         detail: null,
-        url: null
+        url: null,
+        extra: []
       };
     case "ForkEvent":
       return forkSummary(event);
@@ -201,13 +243,15 @@ export const summarizeEvent = (event: StoredEvent): EventSummary => {
       return {
         title: `${getString(event.payload, "action") ?? "updated"} repository`,
         detail: null,
-        url: null
+        url: null,
+        extra: []
       };
     default:
       return {
         title: event.type,
         detail: null,
-        url: null
+        url: null,
+        extra: []
       };
   }
 };

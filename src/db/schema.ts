@@ -35,13 +35,19 @@ export const chatTypeValues = [
 
 export const filterEventValues = [
   "push",
-  "pull_request",
-  "issues",
+  "pull_request_opened",
+  "pull_request_closed",
+  "pull_request_merged",
+  "pull_request_reopened",
+  "issue_opened",
+  "issue_closed",
+  "issue_reopened",
   "release",
   "repository",
   "fork",
   "star",
-  "create"
+  "branch_created",
+  "tag_created"
 ] as const;
 
 export type SubscriptionPreset = (typeof subscriptionPresetValues)[number];
@@ -61,6 +67,7 @@ export type SubscriptionFilters = {
     include: string[];
     exclude: string[];
   };
+  enrichMergedPullRequests: boolean;
 };
 
 export type GitHubEventPayload = Record<string, unknown>;

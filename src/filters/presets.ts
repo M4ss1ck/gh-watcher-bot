@@ -16,8 +16,16 @@ const baseFilters = (events: SubscriptionFilters["events"]): SubscriptionFilters
   branches: {
     include: ["*"],
     exclude: []
-  }
+  },
+  enrichMergedPullRequests: false
 });
+
+const allPullRequestEvents = [
+  "pull_request_opened",
+  "pull_request_closed",
+  "pull_request_merged",
+  "pull_request_reopened"
+] as const satisfies readonly SubscriptionFilters["events"][number][];
 
 export const filterPresets = {
   firehose: {
@@ -25,16 +33,27 @@ export const filterPresets = {
     ignoreBotAuthors: false
   },
   releases_only: baseFilters(["release"]),
-  prs_and_releases: baseFilters(["pull_request", "release", "repository"]),
+  prs_and_releases: baseFilters([
+    ...allPullRequestEvents,
+    "release",
+    "repository"
+  ]),
   code_activity: {
-    ...baseFilters(["push", "pull_request"]),
+    ...baseFilters(["push", ...allPullRequestEvents]),
     branches: {
       include: ["main", "master"],
       exclude: []
     },
     ignoreBotAuthors: true
   },
-  new_stuff: baseFilters(["repository", "release", "fork", "star", "create"])
+  new_stuff: baseFilters([
+    "repository",
+    "release",
+    "fork",
+    "star",
+    "branch_created",
+    "tag_created"
+  ])
 } satisfies Record<Exclude<SubscriptionPreset, "custom">, SubscriptionFilters>;
 
 export const clonePresetFilters = (

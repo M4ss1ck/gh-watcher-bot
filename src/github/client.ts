@@ -5,9 +5,11 @@ import { Octokit } from "@octokit/rest";
 
 import {
   parseGitHubPublicEvents,
+  parseGitHubPullRequestDetail,
   parseGitHubRepoSummary,
   parseGitHubRepoList,
   parseGitHubUserSummary,
+  type GitHubPullRequestDetail,
   type GitHubRepoListItem,
   type GitHubRepoSummary,
   type GitHubPublicEvent,
@@ -52,6 +54,11 @@ export type GitHubApiClient = {
   getRepo: (owner: string, repo: string) => Promise<GitHubRepoSummary>;
   listRepos: (owner: string) => Promise<GitHubRepoListItem[]>;
   getUser: (login: string) => Promise<GitHubUserSummary>;
+  getPullRequest: (
+    owner: string,
+    repo: string,
+    number: number
+  ) => Promise<GitHubPullRequestDetail>;
 };
 
 export const createGitHubClient = (): GitHubApiClient => {
@@ -137,6 +144,19 @@ export const createGitHubClient = (): GitHubApiClient => {
       recordRateLimitRemaining(response.headers);
 
       return parseGitHubUserSummary(response.data);
+    },
+    getPullRequest: async (owner, repo, number) => {
+      const response = await octokit.request(
+        "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+        {
+          owner,
+          repo,
+          pull_number: number
+        }
+      );
+      recordRateLimitRemaining(response.headers);
+
+      return parseGitHubPullRequestDetail(response.data);
     }
   };
 };

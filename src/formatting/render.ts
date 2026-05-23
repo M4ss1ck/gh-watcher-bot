@@ -1,5 +1,9 @@
 // Renders event digests as Telegram HTML messages.
-import type { GitHubUserSummary, StoredEvent } from "~/github/types";
+import type {
+  GitHubPullRequestDetail,
+  GitHubUserSummary,
+  StoredEvent
+} from "~/github/types";
 import { summarizeEvent } from "~/formatting/summarize";
 import type { SchedulePreset, SubscriptionPreset } from "~/db/schema";
 import {
@@ -9,6 +13,7 @@ import {
 
 export type RenderOptions = {
   maxMessageLength?: number;
+  pullRequestDetails?: Map<string, GitHubPullRequestDetail>;
 };
 
 export type AccountSummarySubscription = {
@@ -63,14 +68,21 @@ const formatRepoHeader = (repoName: string): string =>
 const formatActorLink = (login: string): string =>
   `<a href="${escapeAttribute(githubProfileUrl(login))}">${escapeHtml(login)}</a>`;
 
-const renderEventLine = (event: StoredEvent): string => {
-  const summary = summarizeEvent(event);
+const renderEventLine = (
+  event: StoredEvent,
+  pullRequestDetail: GitHubPullRequestDetail | null
+): string => {
+  const summary = summarizeEvent(event, { pullRequestDetail });
   const lines = [
     `• ${formatActorLink(event.actorLogin)} ${escapeHtml(summary.title)}`
   ];
 
   if (summary.detail !== null) {
     lines.push(`  ${escapeHtml(summary.detail)}`);
+  }
+
+  for (const extra of summary.extra) {
+    lines.push(`  ${escapeHtml(extra)}`);
   }
 
   if (summary.url !== null) {
@@ -101,6 +113,7 @@ export const renderEventDigest = (
   }
 
   const maxMessageLength = options.maxMessageLength ?? defaultMaxMessageLength;
+  const pullRequestDetails = options.pullRequestDetails ?? new Map();
   const header = "<b>GitHub activity digest</b>";
   const messages: string[] = [];
   let current = header;
@@ -110,7 +123,10 @@ export const renderEventDigest = (
     const repoHeader = formatRepoHeader(repoName);
 
     for (const event of repoEvents) {
-      const eventLine = renderEventLine(event);
+      const eventLine = renderEventLine(
+        event,
+        pullRequestDetails.get(event.id) ?? null
+      );
       const candidate =
         currentRepo === repoName
           ? `${current}\n${eventLine}`

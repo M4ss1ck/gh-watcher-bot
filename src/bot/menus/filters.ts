@@ -21,13 +21,17 @@ import {
 } from "~/bot/menus/state";
 import { requireChatAdminCallback } from "~/bot/middleware/chatAdminOnly";
 import { updateSubscriptionFilters } from "~/db/queries";
+import { formatFilterEventLabel } from "~/formatting/labels";
 import { logger } from "~/lib/logger";
 
 const eventRows: FilterEvent[][] = [
-  ["push", "pull_request"],
-  ["issues", "release"],
-  ["fork", "star"],
-  ["repository", "create"]
+  ["push", "release"],
+  ["pull_request_opened", "pull_request_closed"],
+  ["pull_request_merged", "pull_request_reopened"],
+  ["issue_opened", "issue_closed"],
+  ["issue_reopened", "repository"],
+  ["branch_created", "tag_created"],
+  ["fork", "star"]
 ];
 
 const toggleEvent = (ctx: Context, event: FilterEvent): void => {
@@ -111,7 +115,7 @@ export const filtersMenu = new Menu<Context>(filtersMenuId)
     for (const row of eventRows) {
       for (const event of row) {
         const enabled = draft?.filters.events.includes(event) ?? false;
-        range.text(`${enabled ? "☑️" : "☐"} ${event}`, async (menuCtx) => {
+        range.text(`${enabled ? "☑️" : "☐"} ${formatFilterEventLabel(event)}`, async (menuCtx) => {
           if (!(await requireChatAdminCallback(menuCtx))) {
             return;
           }
@@ -163,6 +167,36 @@ export const filtersMenu = new Menu<Context>(filtersMenuId)
           filters: {
             ...draft.filters,
             ignoreBotAuthors: !draft.filters.ignoreBotAuthors
+          }
+        });
+        updateSelectedSubscription(key, { preset: "custom" });
+      }
+
+      ctx.menu.update();
+    }
+  )
+  .row()
+  .text(
+    (ctx) => {
+      const key = menuKeyFromContext(ctx);
+      const draft = key === null ? null : getFilterDraft(key);
+
+      return `🔎 Enrich merged PRs: ${draft?.filters.enrichMergedPullRequests ? "✅" : "❌"}`;
+    },
+    async (ctx) => {
+      if (!(await requireChatAdminCallback(ctx))) {
+        return;
+      }
+
+      const key = menuKeyFromContext(ctx);
+
+      if (key !== null) {
+        const draft = getFilterDraft(key);
+        setFilterDraft(key, {
+          preset: "custom",
+          filters: {
+            ...draft.filters,
+            enrichMergedPullRequests: !draft.filters.enrichMergedPullRequests
           }
         });
         updateSelectedSubscription(key, { preset: "custom" });

@@ -32,6 +32,19 @@ export type GitHubRepoSummary = {
 
 export type GitHubRepoListItem = GitHubRepoSummary;
 
+export type GitHubPullRequestDetail = {
+  number: number;
+  title: string;
+  body: string | null;
+  htmlUrl: string;
+  merged: boolean;
+  mergedBy: string | null;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  commits: number;
+};
+
 export type StoredEvent = {
   id: string;
   accountId: number;
@@ -129,4 +142,43 @@ export const parseGitHubRepoList = (value: unknown): GitHubRepoListItem[] => {
   }
 
   return value.map(parseGitHubRepoSummary);
+};
+
+export const parseGitHubPullRequestDetail = (
+  value: unknown
+): GitHubPullRequestDetail => {
+  if (!isRecord(value)) {
+    throw new Error("GitHub pull request response was not an object");
+  }
+
+  if (
+    typeof value.number !== "number" ||
+    typeof value.title !== "string" ||
+    !(typeof value.body === "string" || value.body === null) ||
+    typeof value.html_url !== "string" ||
+    typeof value.merged !== "boolean" ||
+    typeof value.additions !== "number" ||
+    typeof value.deletions !== "number" ||
+    typeof value.changed_files !== "number" ||
+    typeof value.commits !== "number"
+  ) {
+    throw new Error("GitHub pull request response did not include required fields");
+  }
+
+  const mergedBy = isRecord(value.merged_by) && typeof value.merged_by.login === "string"
+    ? value.merged_by.login
+    : null;
+
+  return {
+    number: value.number,
+    title: value.title,
+    body: value.body,
+    htmlUrl: value.html_url,
+    merged: value.merged,
+    mergedBy,
+    additions: value.additions,
+    deletions: value.deletions,
+    changedFiles: value.changed_files,
+    commits: value.commits
+  };
 };

@@ -2,9 +2,11 @@
 import { migrate } from "drizzle-orm/libsql/migrator";
 
 import { db } from "~/db/client";
+import { migrateSubscriptionFilters } from "~/db/data-migrate";
 
 const migrationsFolder = "./src/db/migrations";
 
 export const runMigrations = async (): Promise<void> => {
   await migrate(db, { migrationsFolder });
+  await migrateSubscriptionFilters();
 };

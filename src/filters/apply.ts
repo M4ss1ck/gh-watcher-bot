@@ -3,31 +3,67 @@ import type { FilterEvent, GitHubEventPayload, SubscriptionFilters } from "~/db/
 import type { StoredEvent } from "~/github/types";
 import { matchesGlobRules } from "~/filters/glob";
 
-const eventCategoryByGitHubType = new Map<string, FilterEvent>([
-  ["PushEvent", "push"],
-  ["PullRequestEvent", "pull_request"],
-  ["IssuesEvent", "issues"],
-  ["ReleaseEvent", "release"],
-  ["RepositoryEvent", "repository"],
-  ["ForkEvent", "fork"],
-  ["WatchEvent", "star"],
-  ["CreateEvent", "create"]
-]);
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-export const getFilterEventType = (event: StoredEvent): FilterEvent | null =>
-  eventCategoryByGitHubType.get(event.type) ?? null;
+const pullRequestActionToFilter: Record<string, FilterEvent> = {
+  opened: "pull_request_opened",
+  closed: "pull_request_closed",
+  merged: "pull_request_merged",
+  reopened: "pull_request_reopened"
+};
 
-const isBotAuthor = (login: string): boolean =>
-  /\[bot\]$/i.test(login) || /-bot$/i.test(login);
+const issueActionToFilter: Record<string, FilterEvent> = {
+  opened: "issue_opened",
+  closed: "issue_closed",
+  reopened: "issue_reopened"
+};
 
-const getString = (payload: GitHubEventPayload, key: string): string | null => {
+const createRefTypeToFilter: Record<string, FilterEvent> = {
+  branch: "branch_created",
+  tag: "tag_created"
+};
+
+const getPayloadString = (
+  payload: GitHubEventPayload,
+  key: string
+): string | null => {
   const value = payload[key];
 
   return typeof value === "string" ? value : null;
 };
+
+export const getFilterEventType = (event: StoredEvent): FilterEvent | null => {
+  switch (event.type) {
+    case "PushEvent":
+      return "push";
+    case "PullRequestEvent": {
+      const action = getPayloadString(event.payload, "action");
+      return action === null ? null : pullRequestActionToFilter[action] ?? null;
+    }
+    case "IssuesEvent": {
+      const action = getPayloadString(event.payload, "action");
+      return action === null ? null : issueActionToFilter[action] ?? null;
+    }
+    case "ReleaseEvent":
+      return "release";
+    case "RepositoryEvent":
+      return "repository";
+    case "ForkEvent":
+      return "fork";
+    case "WatchEvent":
+      return "star";
+    case "CreateEvent": {
+      const refType = getPayloadString(event.payload, "ref_type");
+      return refType === null ? null : createRefTypeToFilter[refType] ?? null;
+    }
+    default:
+      return null;
+  }
+};
+
+const isBotAuthor = (login: string): boolean =>
+  /\[bot\]$/i.test(login) || /-bot$/i.test(login);
 
 export const normalizeBranchName = (ref: string): string =>
   ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
@@ -52,7 +88,7 @@ const getPullRequestBranch = (
 };
 
 const getEventBranch = (event: StoredEvent): string | null => {
-  const ref = getString(event.payload, "ref");
+  const ref = getPayloadString(event.payload, "ref");
 
   if (ref !== null) {
     return normalizeBranchName(ref);

@@ -92,7 +92,7 @@ export const forkEvent: StoredEvent = {
   createdAt: new Date("2026-05-20T12:20:00Z")
 };
 
-export const createEvent: StoredEvent = {
+export const branchCreateEvent: StoredEvent = {
   id: "create-1",
   accountId: 1,
   type: "CreateEvent",
@@ -111,5 +111,5 @@ export const fixtureEvents = [
   releaseEvent,
   starEvent,
   forkEvent,
-  createEvent
+  branchCreateEvent
 ];

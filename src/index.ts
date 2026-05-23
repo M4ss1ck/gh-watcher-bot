@@ -29,7 +29,8 @@ const main = async (): Promise<void> => {
   });
   const deliverer = startDeliverer({
     api: bot.api,
-    pollIntervalCron: env.POLL_INTERVAL_CRON
+    pollIntervalCron: env.POLL_INTERVAL_CRON,
+    enrichmentClient: githubClient
   });
   setDeliverer(deliverer);
 

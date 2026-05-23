@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { applyFilters } from "~/filters/apply";
 import { filterPresets } from "~/filters/presets";
 import {
-  createEvent,
+  branchCreateEvent,
   fixtureEvents,
   forkEvent,
   pullRequestEvent,
@@ -18,7 +18,10 @@ describe("filter presets", () => {
     expect(filterPresets.firehose.events).toContain("push");
     expect(filterPresets.releases_only.events).toEqual(["release"]);
     expect(filterPresets.prs_and_releases.events).toEqual([
-      "pull_request",
+      "pull_request_opened",
+      "pull_request_closed",
+      "pull_request_merged",
+      "pull_request_reopened",
       "release",
       "repository"
     ]);
@@ -31,8 +34,14 @@ describe("filter presets", () => {
       "release",
       "fork",
       "star",
-      "create"
+      "branch_created",
+      "tag_created"
     ]);
+  });
+
+  test("defaults enrichMergedPullRequests to false", () => {
+    expect(filterPresets.firehose.enrichMergedPullRequests).toBe(false);
+    expect(filterPresets.prs_and_releases.enrichMergedPullRequests).toBe(false);
   });
 });
 
@@ -42,7 +51,7 @@ describe("applyFilters", () => {
     expect(applyFilters(filterPresets.code_activity, pullRequestEvent)).toBe(true);
     expect(applyFilters(filterPresets.code_activity, releaseEvent)).toBe(false);
     expect(applyFilters(filterPresets.new_stuff, starEvent)).toBe(true);
-    expect(applyFilters(filterPresets.new_stuff, createEvent)).toBe(true);
+    expect(applyFilters(filterPresets.new_stuff, branchCreateEvent)).toBe(true);
   });
 
   test("honors repo include and exclude globs", () => {
@@ -113,7 +122,7 @@ describe("applyFilters", () => {
     expect(fixtureEvents.filter((event) => applyFilters(filterPresets.new_stuff, event))).toEqual([
       starEvent,
       forkEvent,
-      createEvent
+      branchCreateEvent
     ]);
   });
 });

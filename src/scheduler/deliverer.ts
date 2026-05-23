@@ -6,7 +6,8 @@ import type {
   SubscriptionDeliveryRecord,
   SubscriptionScheduleItem
 } from "~/db/queries";
-import type { StoredEvent } from "~/github/types";
+import type { GitHubApiClient } from "~/github/client";
+import type { GitHubPullRequestDetail, StoredEvent } from "~/github/types";
 import { applyFilters } from "~/filters/apply";
 import { renderEventDigest } from "~/formatting/render";
 import { writeDelivererHeartbeat } from "~/lifecycle/heartbeat";
@@ -45,9 +46,12 @@ export type DeliveryTaskInput = {
   subscriptionId: number;
 };
 
+export type DeliveryEnrichmentClient = Pick<GitHubApiClient, "getPullRequest">;
+
 export type DeliveryTaskOptions = DeliveryTaskInput & {
   store?: DeliveryStore;
   sendMessage: DeliverySendMessage;
+  enrichmentClient?: DeliveryEnrichmentClient;
   now?: Date;
 };
 
@@ -72,6 +76,7 @@ export type StartDelivererOptions = {
   scheduleOverrides?: DeliveryScheduleOverride[];
   pollIntervalCron?: string;
   runImmediately?: boolean;
+  enrichmentClient?: DeliveryEnrichmentClient;
 };
 
 export type Deliverer = {
@@ -117,6 +122,92 @@ const newestCreatedAt = (events: StoredEvent[]): Date => {
 
 const repoNameMatchesSelection = (repoName: string, selectedRepo: string): boolean =>
   repoName === selectedRepo || repoName.endsWith(`/${selectedRepo}`);
+
+const isMergedPullRequestEvent = (event: StoredEvent): boolean => {
+  if (event.type !== "PullRequestEvent") {
+    return false;
+  }
+
+  const action =
+    typeof event.payload === "object" && event.payload !== null
+      ? (event.payload as Record<string, unknown>).action
+      : null;
+
+  return action === "merged";
+};
+
+const getMergedPullRequestNumber = (event: StoredEvent): number | null => {
+  const payload = event.payload as Record<string, unknown>;
+  const pullRequest = payload.pull_request;
+
+  if (typeof pullRequest === "object" && pullRequest !== null) {
+    const number = (pullRequest as Record<string, unknown>).number;
+
+    if (typeof number === "number") {
+      return number;
+    }
+  }
+
+  const top = payload.number;
+
+  return typeof top === "number" ? top : null;
+};
+
+const splitRepoName = (repoName: string): { owner: string; repo: string } | null => {
+  const [owner, repo] = repoName.split("/", 2);
+
+  return owner !== undefined && repo !== undefined ? { owner, repo } : null;
+};
+
+const enrichMergedPullRequests = async (
+  events: StoredEvent[],
+  client: DeliveryEnrichmentClient,
+  taskLogger: ReturnType<typeof createChildLogger>
+): Promise<Map<string, GitHubPullRequestDetail>> => {
+  const targets = events
+    .filter(isMergedPullRequestEvent)
+    .map((event) => {
+      const number = getMergedPullRequestNumber(event);
+      const repo = splitRepoName(event.repoName);
+
+      return number === null || repo === null
+        ? null
+        : { event, number, owner: repo.owner, repo: repo.repo };
+    })
+    .filter((target): target is NonNullable<typeof target> => target !== null);
+
+  const entries = await Promise.all(
+    targets.map(async (target) => {
+      try {
+        const detail = await client.getPullRequest(
+          target.owner,
+          target.repo,
+          target.number
+        );
+
+        return [target.event.id, detail] as const;
+      } catch (error) {
+        taskLogger.warn(
+          {
+            err: error,
+            event_id: target.event.id,
+            repo: target.event.repoName,
+            pr_number: target.number
+          },
+          "merged pull request enrichment failed"
+        );
+
+        return null;
+      }
+    })
+  );
+
+  return new Map(
+    entries.filter((entry): entry is readonly [string, GitHubPullRequestDetail] =>
+      entry !== null
+    )
+  );
+};
 
 const getTelegramErrorCode = (error: unknown): number | null => {
   if (typeof error !== "object" || error === null) {
@@ -210,7 +301,16 @@ const executeDeliveryTask = async (
     };
   }
 
-  const messages = renderEventDigest(matchingEvents);
+  const pullRequestDetails =
+    subscription.filters.enrichMergedPullRequests && options.enrichmentClient
+      ? await enrichMergedPullRequests(
+          matchingEvents,
+          options.enrichmentClient,
+          taskLogger
+        )
+      : new Map<string, GitHubPullRequestDetail>();
+
+  const messages = renderEventDigest(matchingEvents, { pullRequestDetails });
 
   for (const message of messages) {
     await options.sendMessage(subscription.chatId, message);
@@ -312,7 +412,8 @@ export const startDeliverer = (options: StartDelivererOptions): Deliverer => {
       runDeliveryTask({
         subscriptionId: input.subscriptionId,
         store,
-        sendMessage: createSendMessage(options.api)
+        sendMessage: createSendMessage(options.api),
+        enrichmentClient: options.enrichmentClient
       })
   });
 
