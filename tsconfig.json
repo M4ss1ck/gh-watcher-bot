@@ -7,15 +7,13 @@
     "lib": ["ESNext"],
     "types": ["bun"],
     "strict": true,
-    "ignoreDeprecations": "5.0",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "baseUrl": ".",
     "paths": {
-      "~/*": ["src/*"]
+      "~/*": ["./src/*"]
     }
   },
   "include": ["src/**/*.ts", "scripts/**/*.ts", "drizzle.config.ts"],
