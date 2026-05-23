@@ -85,10 +85,6 @@ const renderEventLine = (
     lines.push(`  ${escapeHtml(extra)}`);
   }
 
-  if (summary.url !== null) {
-    lines.push(`  <a href="${escapeAttribute(summary.url)}">Open on GitHub</a>`);
-  }
-
   return lines.join("\n");
 };
 

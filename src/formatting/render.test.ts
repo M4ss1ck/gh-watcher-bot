@@ -114,9 +114,7 @@ describe("renderEventDigest", () => {
         "<b><a href=\"https://github.com/octocat/hello-world\">octocat/hello-world</a></b>",
         "• <a href=\"https://github.com/octocat\">octocat</a> pushed 2 commits to main",
         "  Fix parser &lt;edge&gt;; Add tests &amp; docs",
-        "  <a href=\"https://github.com/octocat/hello-world/commit/abc123456789\">Open on GitHub</a>",
-        "• <a href=\"https://github.com/release-bot%5Bbot%5D\">release-bot[bot]</a> published release Version &lt;1.2.3&gt;",
-        "  <a href=\"https://github.com/octocat/hello-world/releases/tag/v1.2.3\">Open on GitHub</a>"
+        "• <a href=\"https://github.com/release-bot%5Bbot%5D\">release-bot[bot]</a> published release Version &lt;1.2.3&gt;"
       ].join("\n")
     ]);
   });
