@@ -115,7 +115,7 @@ export const filtersMenu = new Menu<Context>(filtersMenuId)
     for (const row of eventRows) {
       for (const event of row) {
         const enabled = draft?.filters.events.includes(event) ?? false;
-        range.text(`${enabled ? "☑️" : "☐"} ${formatFilterEventLabel(event)}`, async (menuCtx) => {
+        range.text(`${enabled ? "✅" : "⬜"} ${formatFilterEventLabel(event)}`, async (menuCtx) => {
           if (!(await requireChatAdminCallback(menuCtx))) {
             return;
           }
