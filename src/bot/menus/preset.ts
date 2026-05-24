@@ -69,7 +69,10 @@ export const savePresetSelection = async (input: {
   const updateFilters = input.updateFilters ?? updateSubscriptionFilters;
 
   await updateFilters(input.subscriptionId, filters, input.preset);
-  updateSelectedSubscription(input.key, { preset: input.preset });
+  updateSelectedSubscription(input.key, {
+    preset: input.preset,
+    filters: structuredClone(filters)
+  });
   clearFilterDraft(input.key);
   clearPresetDraft(input.key);
   await (input.sync ?? syncDeliverer)();

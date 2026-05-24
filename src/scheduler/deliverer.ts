@@ -287,7 +287,16 @@ const executeDeliveryTask = async (
   );
 
   if (matchingEvents.length === 0) {
-    await store.updateSubscriptionDeliveryCursor(subscription.id, now);
+    // Only advance the cursor past events we have actually seen. Advancing
+    // to `now` here would silently skip events that the collector inserts
+    // moments later (the as_fetched schedule races with the collector cron
+    // since both use the same expression).
+    if (events.length > 0) {
+      await store.updateSubscriptionDeliveryCursor(
+        subscription.id,
+        newestCreatedAt(events)
+      );
+    }
     incrementDeliverySent("empty");
     taskLogger.debug(
       { source_event_count: events.length },

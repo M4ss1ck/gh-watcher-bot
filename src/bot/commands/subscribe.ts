@@ -209,11 +209,12 @@ const openSubscriptionForUsername = async (
             client
           });
 
+    const filters = clonePresetFilters("firehose");
     const id = await createOrUpdateSubscription({
       chatId: scope.chatId,
       accountId: account.id,
       preset: "firehose",
-      filters: clonePresetFilters("firehose"),
+      filters,
       schedulePreset: "hourly",
       timezone: "UTC",
       selectedRepos,
@@ -225,6 +226,7 @@ const openSubscriptionForUsername = async (
       accountId: account.id,
       accountLogin: account.login,
       preset: "firehose" as const,
+      filters,
       schedulePreset: "hourly" as const,
       timezone: "UTC",
       selectedRepos,

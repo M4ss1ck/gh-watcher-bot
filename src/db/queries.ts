@@ -126,6 +126,7 @@ export type SubscriptionListItem = {
   accountId: number;
   accountLogin: string;
   preset: SubscriptionPreset;
+  filters: SubscriptionFilters;
   schedulePreset: SchedulePreset;
   timezone: string;
   selectedRepos: string[] | null;
@@ -497,6 +498,7 @@ export const listSubscriptionsForChat = async (
       accountId: githubAccounts.id,
       accountLogin: githubAccounts.login,
       preset: subscriptions.preset,
+      filters: subscriptions.filters,
       schedulePreset: subscriptions.schedulePreset,
       timezone: subscriptions.timezone,
       selectedRepos: subscriptions.selectedRepos,

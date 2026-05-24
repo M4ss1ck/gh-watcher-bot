@@ -10,24 +10,18 @@ import {
 } from "~/bot/menus/subscription";
 import { menuKeyFromContext } from "~/bot/menus/root";
 import {
+  clearScheduleDraft,
+  getScheduleDraft,
   getSelectedSubscription,
+  setScheduleDraft,
   updateSelectedSubscription
 } from "~/bot/menus/state";
 import { isAdminUserId } from "~/bot/middleware/adminOnly";
 import { requireChatAdminCallback } from "~/bot/middleware/chatAdminOnly";
-import type { SchedulePreset } from "~/db/schema";
 import { updateSubscriptionSchedule } from "~/db/queries";
 import { formatSchedulePresetLabel } from "~/formatting/labels";
 import { logger } from "~/lib/logger";
 import { getVisibleSchedulePresetValues } from "~/scheduler/presets";
-
-const setSchedule = (ctx: Context, schedulePreset: SchedulePreset): void => {
-  const key = menuKeyFromContext(ctx);
-
-  if (key !== null) {
-    updateSelectedSubscription(key, { schedulePreset });
-  }
-};
 
 const syncDeliverer = async (): Promise<void> => {
   const deliverer = getDeliverer();
@@ -46,16 +40,21 @@ const syncDeliverer = async (): Promise<void> => {
 export const scheduleMenu = new Menu<Context>(scheduleMenuId)
   .dynamic((ctx, range) => {
     const key = menuKeyFromContext(ctx);
-    const state = key === null ? null : getSelectedSubscription(key);
+    const draft = key === null ? null : getScheduleDraft(key);
 
     for (const preset of getVisibleSchedulePresetValues(isAdminUserId(ctx.from?.id))) {
-      const selected = state?.schedulePreset === preset;
+      const selected = draft === preset;
       range.text(`${selected ? "◉" : "○"} ${formatSchedulePresetLabel(preset)}`, async (menuCtx) => {
         if (!(await requireChatAdminCallback(menuCtx))) {
           return;
         }
 
-        setSchedule(menuCtx, preset);
+        const menuKey = menuKeyFromContext(menuCtx);
+
+        if (menuKey !== null) {
+          setScheduleDraft(menuKey, preset);
+        }
+
         menuCtx.menu.update();
       }).row();
     }
@@ -70,15 +69,19 @@ export const scheduleMenu = new Menu<Context>(scheduleMenuId)
     const key = menuKeyFromContext(ctx);
     const state = key === null ? null : getSelectedSubscription(key);
 
-    if (state === null) {
+    if (key === null || state === null) {
       await ctx.answerCallbackQuery({
         text: "Subscription state lost. Open /subscribe again."
       });
       return;
     }
 
+    const schedulePreset = getScheduleDraft(key) ?? state.schedulePreset;
+
     try {
-      await updateSubscriptionSchedule(state.id, state.schedulePreset, state.timezone);
+      await updateSubscriptionSchedule(state.id, schedulePreset, state.timezone);
+      updateSelectedSubscription(key, { schedulePreset });
+      clearScheduleDraft(key);
       await syncDeliverer();
     } catch (error) {
       logger.error({ err: error, subscription_id: state.id }, "schedule save failed");
@@ -91,6 +94,12 @@ export const scheduleMenu = new Menu<Context>(scheduleMenuId)
     });
   })
   .text("❌ Cancel", async (ctx) => {
+    const key = menuKeyFromContext(ctx);
+
+    if (key !== null) {
+      clearScheduleDraft(key);
+    }
+
     await ctx.editMessageText(buildSubscriptionMenuText(ctx), {
       reply_markup: subscriptionMenu
     });

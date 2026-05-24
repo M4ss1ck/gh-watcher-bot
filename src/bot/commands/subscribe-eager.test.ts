@@ -118,6 +118,7 @@ describe("/subscribe eager creation", () => {
       accountId: 583231,
       accountLogin: "octocat",
       preset: "firehose",
+      filters: clonePresetFilters("firehose"),
       schedulePreset: "hourly",
       timezone: "UTC",
       selectedRepos: null,

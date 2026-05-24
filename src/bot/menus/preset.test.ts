@@ -44,6 +44,7 @@ describe("subscription preset menu helpers", () => {
       accountId: 583231,
       accountLogin: "octocat",
       preset: "firehose",
+      filters: clonePresetFilters("firehose"),
       schedulePreset: "hourly",
       timezone: "UTC",
       selectedRepos: null,
@@ -76,6 +77,9 @@ describe("subscription preset menu helpers", () => {
       }
     ]);
     expect(getSelectedSubscription(key)?.preset).toBe("releases_only");
+    expect(getSelectedSubscription(key)?.filters).toEqual(
+      clonePresetFilters("releases_only")
+    );
     expect(syncCount).toBe(1);
   });
 });

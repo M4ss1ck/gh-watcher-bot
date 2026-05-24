@@ -8,6 +8,7 @@ import {
   formatSubscriptionListButton
 } from "~/bot/menus/root";
 import type { SubscriptionListItem } from "~/db/queries";
+import { filterPresets } from "~/filters/presets";
 
 type StyledButton = {
   text: string;
@@ -22,6 +23,7 @@ describe("subscription root menu helpers", () => {
         accountId: 1026,
         accountLogin: "torvalds",
         preset: "releases_only",
+        filters: filterPresets.releases_only,
         schedulePreset: "daily_09",
         timezone: "UTC",
         selectedRepos: null,
@@ -42,6 +44,7 @@ describe("subscription root menu helpers", () => {
         accountId: 1026,
         accountLogin: "torvalds",
         preset: "prs_and_releases",
+        filters: filterPresets.prs_and_releases,
         schedulePreset: "as_fetched",
         timezone: "America/Santiago",
         selectedRepos: null,

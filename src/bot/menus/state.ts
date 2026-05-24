@@ -16,6 +16,7 @@ export type SubscriptionMenuState = {
   accountId: number;
   accountLogin: string;
   preset: SubscriptionPreset;
+  filters: SubscriptionFilters;
   schedulePreset: SchedulePreset;
   timezone: string;
   selectedRepos: string[] | null;
@@ -34,6 +35,7 @@ const selections = new Map<string, SubscriptionMenuState>();
 const filterDrafts = new Map<string, FilterDraft>();
 const presetDrafts = new Map<string, SavedSubscriptionPreset>();
 const repoDrafts = new Map<string, string[] | null>();
+const scheduleDrafts = new Map<string, SchedulePreset>();
 
 export const menuKey = (key: MenuKey): string => `${key.chatId}:${key.userId}`;
 
@@ -53,6 +55,7 @@ export const clearSelectedSubscription = (key: MenuKey): void => {
   filterDrafts.delete(menuKey(key));
   presetDrafts.delete(menuKey(key));
   repoDrafts.delete(menuKey(key));
+  scheduleDrafts.delete(menuKey(key));
 };
 
 export const updateSelectedSubscription = (
@@ -80,11 +83,21 @@ export const getFilterDraft = (key: MenuKey): FilterDraft => {
   }
 
   const selection = getSelectedSubscription(key);
-  const preset =
-    selection === null || selection.preset === "custom" ? "firehose" : selection.preset;
+
+  if (selection !== null) {
+    const draft = {
+      preset: selection.preset,
+      filters: structuredClone(selection.filters)
+    };
+
+    filterDrafts.set(id, draft);
+
+    return draft;
+  }
+
   const draft = {
-    preset,
-    filters: clonePresetFilters(preset)
+    preset: "firehose" as const,
+    filters: clonePresetFilters("firehose")
   };
 
   filterDrafts.set(id, draft);
@@ -147,4 +160,31 @@ export const setRepoDraft = (key: MenuKey, selectedRepos: string[] | null): void
 
 export const clearRepoDraft = (key: MenuKey): void => {
   repoDrafts.delete(menuKey(key));
+};
+
+export const getScheduleDraft = (key: MenuKey): SchedulePreset | null => {
+  const id = menuKey(key);
+  const existing = scheduleDrafts.get(id);
+
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const selection = getSelectedSubscription(key);
+
+  if (selection === null) {
+    return null;
+  }
+
+  scheduleDrafts.set(id, selection.schedulePreset);
+
+  return selection.schedulePreset;
+};
+
+export const setScheduleDraft = (key: MenuKey, preset: SchedulePreset): void => {
+  scheduleDrafts.set(menuKey(key), preset);
+};
+
+export const clearScheduleDraft = (key: MenuKey): void => {
+  scheduleDrafts.delete(menuKey(key));
 };

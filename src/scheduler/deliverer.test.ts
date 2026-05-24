@@ -77,7 +77,7 @@ describe("runDeliveryTask", () => {
     ]);
   });
 
-  test("does not send when filters remove every event and advances to now", async () => {
+  test("does not send when filters remove every event and advances to newest seen", async () => {
     const storeState = createStore([releaseEvent]);
     const codeOnlySubscription = {
       ...subscription,
@@ -102,8 +102,24 @@ describe("runDeliveryTask", () => {
     expect(result.eventCount).toBe(0);
     expect(sentMessages.length).toBe(0);
     expect(storeState.cursorWrites.map((date) => date.toISOString())).toEqual([
-      "2026-05-20T13:05:00.000Z"
+      releaseEvent.createdAt.toISOString()
     ]);
+  });
+
+  test("leaves the cursor unchanged when there are no events to deliver", async () => {
+    const { cursorWrites, store } = createStore([]);
+
+    const result = await runDeliveryTask({
+      subscriptionId: subscription.id,
+      store,
+      sendMessage: async () => {
+        throw new Error("should not send");
+      },
+      now: new Date("2026-05-20T13:05:00Z")
+    });
+
+    expect(result.status).toBe("empty");
+    expect(cursorWrites).toEqual([]);
   });
 
   test("leaves the cursor unchanged when Telegram sending fails", async () => {

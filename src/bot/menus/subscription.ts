@@ -17,7 +17,9 @@ import {
   menuKeyFromContext
 } from "~/bot/menus/root";
 import {
+  clearFilterDraft,
   clearPresetDraft,
+  clearScheduleDraft,
   clearSelectedSubscription,
   getSelectedSubscription,
   updateSelectedSubscription
@@ -169,10 +171,22 @@ export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
     await ctx.editMessageText("Preset");
   })
   .submenu("⚙️ Filters", filtersMenuId, async (ctx) => {
+    const key = menuKeyFromContext(ctx);
+
+    if (key !== null) {
+      clearFilterDraft(key);
+    }
+
     await ctx.editMessageText("Filters");
   })
   .row()
   .submenu("🕐 Schedule", scheduleMenuId, async (ctx) => {
+    const key = menuKeyFromContext(ctx);
+
+    if (key !== null) {
+      clearScheduleDraft(key);
+    }
+
     await ctx.editMessageText("Schedule");
   })
   .submenu("🌍 Timezone", timezoneMenuId, async (ctx) => {

@@ -91,7 +91,10 @@ const saveFilters = async (ctx: Context): Promise<void> => {
 
   try {
     await updateSubscriptionFilters(current.id, draft.filters, draft.preset);
-    updateSelectedSubscription(key, { preset: draft.preset });
+    updateSelectedSubscription(key, {
+      preset: draft.preset,
+      filters: structuredClone(draft.filters)
+    });
   } catch (error) {
     logger.error({ err: error, subscription_id: current.id }, "filter save failed");
     await ctx.answerCallbackQuery({ text: "Save failed. Try again." });
