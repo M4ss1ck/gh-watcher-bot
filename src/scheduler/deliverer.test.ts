@@ -24,7 +24,8 @@ const subscription: SubscriptionForDelivery = {
   accountLogin: "octocat",
   filters: filterPresets.firehose,
   selectedRepos: null,
-  lastDeliveredAt: null
+  lastDeliveredAt: null,
+  aiSummary: false
 };
 
 const createStore = (events: StoredEvent[]) => {

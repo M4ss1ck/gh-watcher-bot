@@ -28,6 +28,7 @@ describe("subscription root menu helpers", () => {
         timezone: "UTC",
         selectedRepos: null,
         paused: false,
+        aiSummary: false,
         lastDeliveredAt: null
       } satisfies SubscriptionListItem)
     ).toBe("▶️ @torvalds · Releases only, Daily 09:00");

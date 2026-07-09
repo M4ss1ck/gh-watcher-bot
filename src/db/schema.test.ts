@@ -78,6 +78,7 @@ describe("database schema", () => {
       "lastDeliveredAt",
       "selectedRepos",
       "paused",
+      "aiSummary",
       "createdAt",
       "createdByUserId"
     ]);

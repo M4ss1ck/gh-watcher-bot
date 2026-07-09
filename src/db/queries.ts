@@ -131,6 +131,7 @@ export type SubscriptionListItem = {
   timezone: string;
   selectedRepos: string[] | null;
   paused: boolean;
+  aiSummary: boolean;
   lastDeliveredAt: Date | null;
 };
 
@@ -150,6 +151,7 @@ export type SubscriptionDeliveryRecord = {
   filters: SubscriptionFilters;
   selectedRepos: string[] | null;
   lastDeliveredAt: Date | null;
+  aiSummary: boolean;
 };
 
 export type AdminChatListItem = {
@@ -503,6 +505,7 @@ export const listSubscriptionsForChat = async (
       timezone: subscriptions.timezone,
       selectedRepos: subscriptions.selectedRepos,
       paused: subscriptions.paused,
+      aiSummary: subscriptions.aiSummary,
       lastDeliveredAt: subscriptions.lastDeliveredAt
     })
     .from(subscriptions)
@@ -558,6 +561,16 @@ export const setSubscriptionPaused = async (
   await db
     .update(subscriptions)
     .set({ paused })
+    .where(eq(subscriptions.id, id));
+};
+
+export const setSubscriptionAiSummary = async (
+  id: number,
+  aiSummary: boolean
+): Promise<void> => {
+  await db
+    .update(subscriptions)
+    .set({ aiSummary })
     .where(eq(subscriptions.id, id));
 };
 
@@ -630,7 +643,8 @@ export const getSubscriptionForDelivery = async (
       accountLogin: githubAccounts.login,
       filters: subscriptions.filters,
       selectedRepos: subscriptions.selectedRepos,
-      lastDeliveredAt: subscriptions.lastDeliveredAt
+      lastDeliveredAt: subscriptions.lastDeliveredAt,
+      aiSummary: subscriptions.aiSummary
     })
     .from(subscriptions)
     .innerJoin(chats, eq(subscriptions.chatId, chats.id))

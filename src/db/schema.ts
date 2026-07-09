@@ -168,6 +168,7 @@ export const subscriptions = sqliteTable(
     lastDeliveredAt: integer("lastDeliveredAt", { mode: "timestamp_ms" }),
     selectedRepos: text("selectedRepos", { mode: "json" }).$type<string[] | null>(),
     paused: integer("paused", { mode: "boolean" }).notNull().default(false),
+    aiSummary: integer("aiSummary", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("createdAt", { mode: "timestamp_ms" })
       .notNull()
       .default(nowMs),
