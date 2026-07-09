@@ -13,6 +13,7 @@ import {
   type PollResult
 } from "~/github/poller";
 import { writeCollectorHeartbeat } from "~/lifecycle/heartbeat";
+import { shuttingDown } from "~/lifecycle/shutdown";
 import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
 
@@ -49,6 +50,7 @@ export type CollectorTickOptions = {
   concurrency?: number;
   repoPollThreshold?: number;
   now?: Date;
+  isShuttingDown?: () => boolean;
 };
 
 export type CollectorTickSummary = {
@@ -120,6 +122,7 @@ export const runCollectorTick = async (
   const startedAt = Date.now();
   const now = options.now ?? new Date();
   const store = options.store ?? defaultStore;
+  const isShuttingDown = options.isShuttingDown ?? (() => shuttingDown);
   const accounts = await store.listGitHubAccountsForPolling();
   const queue = new PQueue({ concurrency: options.concurrency ?? 5 });
   const client = createGitHubClient();
@@ -134,6 +137,10 @@ export const runCollectorTick = async (
   const pollAccountByMode = async (
     account: GitHubAccountForPolling
   ): Promise<PollResult[]> => {
+    if (isShuttingDown()) {
+      return [];
+    }
+
     if (
       store.listActiveSubscriptionRepoSelectionsForAccount === undefined ||
       store.listGitHubReposForPolling === undefined

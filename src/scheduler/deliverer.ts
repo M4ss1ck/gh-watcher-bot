@@ -11,6 +11,7 @@ import type { GitHubPullRequestDetail, StoredEvent } from "~/github/types";
 import { applyFilters } from "~/filters/apply";
 import { renderEventDigest } from "~/formatting/render";
 import { writeDelivererHeartbeat } from "~/lifecycle/heartbeat";
+import { shuttingDown } from "~/lifecycle/shutdown";
 import { createChildLogger, logger } from "~/lib/logger";
 import {
   incrementDeliverySent,
@@ -53,6 +54,7 @@ export type DeliveryTaskOptions = DeliveryTaskInput & {
   sendMessage: DeliverySendMessage;
   enrichmentClient?: DeliveryEnrichmentClient;
   now?: Date;
+  isShuttingDown?: () => boolean;
 };
 
 export type DeliveryTaskResult = {
@@ -235,6 +237,21 @@ const executeDeliveryTask = async (
   options: DeliveryTaskOptions,
   now: Date
 ): Promise<DeliveryTaskResult> => {
+  const isShuttingDown = options.isShuttingDown ?? (() => shuttingDown);
+
+  if (isShuttingDown()) {
+    logger.debug(
+      { subscription_id: options.subscriptionId },
+      "delivery skipped during shutdown"
+    );
+
+    return {
+      status: "skipped",
+      eventCount: 0,
+      messageCount: 0
+    };
+  }
+
   const store = options.store ?? defaultStore;
   const subscription = await store.getSubscriptionForDelivery(
     options.subscriptionId

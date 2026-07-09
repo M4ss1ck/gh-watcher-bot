@@ -199,4 +199,21 @@ describe("runDeliveryTask", () => {
       "2026-05-20T12:00:00.000Z"
     ]);
   });
+
+  test("skips delivery once shutdown begins", async () => {
+    const { cursorWrites, store } = createStore([pushEvent]);
+
+    const result = await runDeliveryTask({
+      subscriptionId: subscription.id,
+      store,
+      sendMessage: async () => {
+        throw new Error("should not send during shutdown");
+      },
+      isShuttingDown: () => true,
+      now: new Date("2026-05-20T13:05:00Z")
+    });
+
+    expect(result.status).toBe("skipped");
+    expect(cursorWrites.length).toBe(0);
+  });
 });

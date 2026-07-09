@@ -126,6 +126,35 @@ describe("collector tick", () => {
     expect(result.fetchedCount).toBe(2);
     expect(result.insertedCount).toBe(1);
   });
+
+  test("skips polling accounts once shutdown begins", async () => {
+    let polled = 0;
+    const summary = await runCollectorTick({
+      store: {
+        listGitHubAccountsForPolling: async () => [
+          { id: 1, login: "octocat", etag: null, lastEventId: null, consecutiveFailures: 0, pausedUntil: null }
+        ],
+        writeCollectorHeartbeat: async () => {}
+      },
+      pollAccount: async (pollAccount) => {
+        polled += 1;
+        return {
+          status: "ok",
+          accountId: pollAccount.id,
+          login: pollAccount.login,
+          fetchedCount: 0,
+          insertedCount: 0,
+          etag: null,
+          lastEventId: null
+        };
+      },
+      isShuttingDown: () => true
+    });
+
+    expect(polled).toBe(0);
+    expect(summary.accountCount).toBe(1);
+    expect(summary.fetchedCount).toBe(0);
+  });
 });
 
 describe("chooseAccountPollingMode", () => {
