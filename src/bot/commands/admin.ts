@@ -36,7 +36,7 @@ export type AdminDiagnosticsInput = {
   errorsLast24h: number;
   metrics?: Pick<
     MetricsSnapshot,
-    "githubApiRequestsTotal" | "deliveriesSentTotal" | "telegramApiErrorsTotal"
+    "githubApiRequestsTotal" | "deliveriesSentTotal" | "telegramApiErrorsTotal" | "aiSummariesTotal"
   >;
 };
 
@@ -92,6 +92,7 @@ export const buildAdminDiagnosticsMessage = (
   const githubRequests = input.metrics?.githubApiRequestsTotal;
   const deliveries = input.metrics?.deliveriesSentTotal;
   const telegramErrors = input.metrics?.telegramApiErrorsTotal;
+  const aiSummaries = input.metrics?.aiSummariesTotal;
   const telegramErrorCount = Object.values(telegramErrors ?? {}).reduce(
     (sum, value) => sum + value,
     0
@@ -111,6 +112,9 @@ export const buildAdminDiagnosticsMessage = (
     deliveries === undefined
       ? null
       : `Deliveries: ok=${deliveries.ok}, empty=${deliveries.empty}, error=${deliveries.error}`,
+    aiSummaries === undefined
+      ? null
+      : `AI summaries: ok=${aiSummaries.ok}, error=${aiSummaries.error}`,
     telegramErrors === undefined
       ? null
       : `Telegram API errors: ${telegramErrorCount}`

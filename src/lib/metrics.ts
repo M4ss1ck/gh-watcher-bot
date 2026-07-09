@@ -1,6 +1,7 @@
 // Tracks in-memory counters for admin diagnostics.
 export type GitHubApiStatus = "200" | "304" | "4xx" | "5xx" | "error";
 export type DeliveryStatus = "ok" | "empty" | "error";
+export type AiSummaryStatus = "ok" | "error";
 
 export type MetricsSnapshot = {
   githubApiRequestsTotal: Record<GitHubApiStatus, number>;
@@ -8,6 +9,7 @@ export type MetricsSnapshot = {
   deliveriesSentTotal: Record<DeliveryStatus, number>;
   deliveryDurationMs: number[];
   telegramApiErrorsTotal: Record<string, number>;
+  aiSummariesTotal: Record<AiSummaryStatus, number>;
 };
 
 const githubApiRequestsTotal: Record<GitHubApiStatus, number> = {
@@ -26,6 +28,10 @@ const deliveriesSentTotal: Record<DeliveryStatus, number> = {
 };
 const telegramApiErrorsTotal = new Map<string, number>();
 const deliveryDurationMs: number[] = [];
+const aiSummariesTotal: Record<AiSummaryStatus, number> = {
+  ok: 0,
+  error: 0
+};
 
 const incrementMap = (map: Map<string, number>, key: string, by = 1): void => {
   map.set(key, (map.get(key) ?? 0) + by);
@@ -55,12 +61,17 @@ export const incrementTelegramApiError = (code: number | string): void => {
   incrementMap(telegramApiErrorsTotal, String(code));
 };
 
+export const incrementAiSummary = (status: AiSummaryStatus): void => {
+  aiSummariesTotal[status] += 1;
+};
+
 export const getMetricsSnapshot = (): MetricsSnapshot => ({
   githubApiRequestsTotal: { ...githubApiRequestsTotal },
   eventsCollectedTotal: Object.fromEntries(eventsCollectedTotal),
   deliveriesSentTotal: { ...deliveriesSentTotal },
   deliveryDurationMs: [...deliveryDurationMs],
-  telegramApiErrorsTotal: Object.fromEntries(telegramApiErrorsTotal)
+  telegramApiErrorsTotal: Object.fromEntries(telegramApiErrorsTotal),
+  aiSummariesTotal: { ...aiSummariesTotal }
 });
 
 export const resetMetricsForTests = (): void => {
@@ -76,4 +87,8 @@ export const resetMetricsForTests = (): void => {
 
   deliveryDurationMs.length = 0;
   telegramApiErrorsTotal.clear();
+
+  for (const key of Object.keys(aiSummariesTotal) as AiSummaryStatus[]) {
+    aiSummariesTotal[key] = 0;
+  }
 };

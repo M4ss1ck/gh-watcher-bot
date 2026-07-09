@@ -30,7 +30,8 @@ const rawEnvSchema = z
     POLL_INTERVAL_CRON: z.string().min(1).default("*/10 * * * *"),
     MAX_SUBS_PER_CHAT: z.coerce.number().int().positive().default(20),
     REPO_POLL_THRESHOLD: z.coerce.number().int().positive().default(5),
-    GITHUB_TOKEN: z.string().optional()
+    GITHUB_TOKEN: z.string().optional(),
+    OPENCODE_API_KEY: z.string().optional()
   })
   .superRefine((value, context) => {
     if (value.DATABASE_URL.startsWith("libsql://") && !value.DATABASE_AUTH_TOKEN) {

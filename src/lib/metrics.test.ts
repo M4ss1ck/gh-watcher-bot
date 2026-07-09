@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   getMetricsSnapshot,
+  incrementAiSummary,
   incrementDeliverySent,
   incrementEventsCollected,
   incrementGitHubApiRequest,
@@ -41,7 +42,22 @@ describe("metrics", () => {
       deliveryDurationMs: [125],
       telegramApiErrorsTotal: {
         "429": 1
+      },
+      aiSummariesTotal: {
+        ok: 0,
+        error: 0
       }
     });
+  });
+
+  test("counts ai summary outcomes", () => {
+    resetMetricsForTests();
+    incrementAiSummary("ok");
+    incrementAiSummary("error");
+    incrementAiSummary("error");
+
+    const snapshot = getMetricsSnapshot();
+
+    expect(snapshot.aiSummariesTotal).toEqual({ ok: 1, error: 2 });
   });
 });

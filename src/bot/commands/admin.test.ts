@@ -18,33 +18,38 @@ describe("admin helpers", () => {
   });
 
   test("builds diagnostics text from counters and DB gauges", () => {
-    expect(
-      buildAdminDiagnosticsMessage({
-        lastCollectorTickAge: "12s ago",
-        githubRateLimitRemaining: "unknown",
-        activeSubscriptions: 7,
-        activeChats: 3,
-        eventsIngestedLast24h: 42,
-        errorsLast24h: 2,
-        metrics: {
-          githubApiRequestsTotal: {
-            "200": 4,
-            "304": 1,
-            "4xx": 0,
-            "5xx": 1,
-            error: 1
-          },
-          deliveriesSentTotal: {
-            ok: 5,
-            empty: 2,
-            error: 1
-          },
-          telegramApiErrorsTotal: {
-            "429": 2
-          }
+    const message = buildAdminDiagnosticsMessage({
+      lastCollectorTickAge: "12s ago",
+      githubRateLimitRemaining: "unknown",
+      activeSubscriptions: 7,
+      activeChats: 3,
+      eventsIngestedLast24h: 42,
+      errorsLast24h: 2,
+      metrics: {
+        githubApiRequestsTotal: {
+          "200": 4,
+          "304": 1,
+          "4xx": 0,
+          "5xx": 1,
+          error: 1
+        },
+        deliveriesSentTotal: {
+          ok: 5,
+          empty: 2,
+          error: 1
+        },
+        telegramApiErrorsTotal: {
+          "429": 2
+        },
+        aiSummariesTotal: {
+          ok: 3,
+          error: 1
         }
-      })
-    ).toContain("Active subscriptions: 7");
+      }
+    });
+
+    expect(message).toContain("Active subscriptions: 7");
+    expect(message).toContain("AI summaries: ok=3, error=1");
   });
 
   test("formats admin menu list buttons", () => {
