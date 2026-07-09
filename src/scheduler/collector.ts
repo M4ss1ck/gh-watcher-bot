@@ -51,6 +51,7 @@ export type CollectorTickOptions = {
   repoPollThreshold?: number;
   now?: Date;
   isShuttingDown?: () => boolean;
+  client?: GitHubApiClient;
 };
 
 export type CollectorTickSummary = {
@@ -125,7 +126,7 @@ export const runCollectorTick = async (
   const isShuttingDown = options.isShuttingDown ?? (() => shuttingDown);
   const accounts = await store.listGitHubAccountsForPolling();
   const queue = new PQueue({ concurrency: options.concurrency ?? 5 });
-  const client = createGitHubClient();
+  const client = options.client ?? createGitHubClient();
   const pollAccount =
     options.pollAccount ??
     (async (account: GitHubAccountForPolling) =>
@@ -195,7 +196,7 @@ export const startCollector = (options: StartCollectorOptions): CollectorJob => 
   const run = async (): Promise<void> => {
     const summary = await runCollectorTick({
       store,
-      pollAccount: (account) => pollGitHubAccount(account, { client }),
+      client,
       now: new Date()
     });
 

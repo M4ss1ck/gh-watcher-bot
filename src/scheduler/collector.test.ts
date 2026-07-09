@@ -1,11 +1,17 @@
 // Verifies collector tick orchestration without live GitHub calls.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
+import type { GitHubApiClient } from "~/github/client";
 import {
   chooseAccountPollingMode,
   runCollectorTick,
   type CollectorStore
 } from "~/scheduler/collector";
+
+mock.module("~/db/queries", () => ({
+  insertGitHubEvents: async () => undefined,
+  markGitHubAccountPollSucceeded: async () => undefined
+}));
 
 const account = {
   id: 1024,
@@ -154,6 +160,31 @@ describe("collector tick", () => {
     expect(polled).toBe(0);
     expect(summary.accountCount).toBe(1);
     expect(summary.fetchedCount).toBe(0);
+  });
+
+  test("uses the injected client for default account polling", async () => {
+    let fetchCalls = 0;
+    const client: GitHubApiClient = {
+      fetchUserEvents: async () => {
+        fetchCalls += 1;
+        return { status: 200, headers: {}, data: [] };
+      },
+      fetchRepoEvents: async () => ({ status: 200, headers: {}, data: [] }),
+      getRepo: async () => { throw new Error("not used"); },
+      listRepos: async () => [],
+      getUser: async () => { throw new Error("not used"); },
+      getPullRequest: async () => { throw new Error("not used"); }
+    };
+
+    await runCollectorTick({
+      store: {
+        listGitHubAccountsForPolling: async () => [account],
+        writeCollectorHeartbeat: async () => {}
+      },
+      client
+    });
+
+    expect(fetchCalls).toBe(1);
   });
 });
 
