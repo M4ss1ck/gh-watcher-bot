@@ -1,7 +1,11 @@
 // Verifies Telegram HTML rendering for event digests.
 import { describe, expect, test } from "bun:test";
 
-import { renderAccountSummary, renderEventDigest } from "~/formatting/render";
+import {
+  renderAccountSummary,
+  renderAiDigest,
+  renderEventDigest
+} from "~/formatting/render";
 import { summarizeEvent } from "~/formatting/summarize";
 import type { StoredEvent } from "~/github/types";
 import {
@@ -131,6 +135,17 @@ describe("renderEventDigest", () => {
         )
       )
     ).toBe(true);
+  });
+});
+
+describe("renderAiDigest", () => {
+  test("escapes the summary and links each repository", () => {
+    const message = renderAiDigest("Shipped <v2> & more", [pushEvent]);
+
+    expect(message).toContain("<b>GitHub activity digest</b>");
+    expect(message).toContain("Shipped &lt;v2&gt; &amp; more");
+    expect(message).toContain(`https://github.com/${pushEvent.repoName}`);
+    expect(message).not.toContain("<v2>");
   });
 });
 

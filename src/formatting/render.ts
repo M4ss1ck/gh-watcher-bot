@@ -143,3 +143,29 @@ export const renderEventDigest = (
 
   return messages;
 };
+
+const maxLinkedRepos = 6;
+
+export const renderAiDigest = (
+  summaryText: string,
+  events: StoredEvent[]
+): string => {
+  const repoNames = [...new Set(events.map((event) => event.repoName))];
+  const shown = repoNames.slice(0, maxLinkedRepos);
+  const overflow = repoNames.length - shown.length;
+  const links = shown
+    .map(
+      (repoName) =>
+        `<a href="${escapeAttribute(githubRepoUrl(repoName))}">${escapeHtml(repoName)}</a>`
+    )
+    .join(" · ");
+  const linkLine = overflow > 0 ? `${links} · +${overflow} more` : links;
+
+  return [
+    "<b>GitHub activity digest</b> · AI summary",
+    "",
+    escapeHtml(summaryText),
+    "",
+    linkLine
+  ].join("\n");
+};
