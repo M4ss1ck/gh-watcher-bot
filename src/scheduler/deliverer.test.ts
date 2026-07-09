@@ -48,6 +48,26 @@ const createStore = (events: StoredEvent[]) => {
   return { cursorWrites, heartbeatWrites, store };
 };
 
+const aiSubscription: SubscriptionForDelivery = {
+  ...subscription,
+  aiSummary: true
+};
+
+const storeWithSubscription = (
+  events: StoredEvent[],
+  record: SubscriptionForDelivery
+) => {
+  const base = createStore(events);
+
+  return {
+    ...base,
+    store: {
+      ...base.store,
+      getSubscriptionForDelivery: async () => record
+    }
+  };
+};
+
 describe("runDeliveryTask", () => {
   test("sends matching events and advances the cursor to the newest event", async () => {
     const { cursorWrites, heartbeatWrites, store } = createStore([
@@ -216,5 +236,75 @@ describe("runDeliveryTask", () => {
 
     expect(result.status).toBe("skipped");
     expect(cursorWrites.length).toBe(0);
+  });
+});
+
+describe("runDeliveryTask with ai summaries", () => {
+  test("sends a single AI digest when the summarizer succeeds", async () => {
+    const { store } = storeWithSubscription([pushEvent, releaseEvent], aiSubscription);
+    const sentMessages: string[] = [];
+
+    const result = await runDeliveryTask({
+      subscriptionId: aiSubscription.id,
+      store,
+      sendMessage: async (_chatId, text) => {
+        sentMessages.push(text);
+      },
+      aiSummarizer: {
+        isAvailable: () => true,
+        generate: async () => "Two things happened today."
+      },
+      now: new Date("2026-05-20T13:00:00Z")
+    });
+
+    expect(result.status).toBe("ok");
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0]).toContain("AI summary");
+    expect(sentMessages[0]).toContain("Two things happened today.");
+  });
+
+  test("falls back to the mechanical digest when the summarizer fails", async () => {
+    const { cursorWrites, store } = storeWithSubscription([pushEvent], aiSubscription);
+    const sentMessages: string[] = [];
+
+    const result = await runDeliveryTask({
+      subscriptionId: aiSubscription.id,
+      store,
+      sendMessage: async (_chatId, text) => {
+        sentMessages.push(text);
+      },
+      aiSummarizer: {
+        isAvailable: () => true,
+        generate: async () => null
+      },
+      now: new Date("2026-05-20T13:00:00Z")
+    });
+
+    expect(result.status).toBe("ok");
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0]).not.toContain("AI summary");
+    expect(sentMessages[0]).toContain("GitHub activity digest");
+    expect(cursorWrites.length).toBe(1);
+  });
+
+  test("does not call the summarizer when the subscription has it off", async () => {
+    const { store } = storeWithSubscription([pushEvent], subscription);
+    let generateCalls = 0;
+
+    await runDeliveryTask({
+      subscriptionId: subscription.id,
+      store,
+      sendMessage: async () => {},
+      aiSummarizer: {
+        isAvailable: () => true,
+        generate: async () => {
+          generateCalls += 1;
+          return "should not be used";
+        }
+      },
+      now: new Date("2026-05-20T13:00:00Z")
+    });
+
+    expect(generateCalls).toBe(0);
   });
 });

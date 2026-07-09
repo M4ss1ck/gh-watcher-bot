@@ -8,8 +8,9 @@ import type {
 } from "~/db/queries";
 import type { GitHubApiClient } from "~/github/client";
 import type { GitHubPullRequestDetail, StoredEvent } from "~/github/types";
+import { generateAiSummary, isAiSummaryAvailable } from "~/ai/summary";
 import { applyFilters } from "~/filters/apply";
-import { renderEventDigest } from "~/formatting/render";
+import { renderAiDigest, renderEventDigest } from "~/formatting/render";
 import { writeDelivererHeartbeat } from "~/lifecycle/heartbeat";
 import { shuttingDown } from "~/lifecycle/shutdown";
 import { createChildLogger, logger } from "~/lib/logger";
@@ -49,10 +50,25 @@ export type DeliveryTaskInput = {
 
 export type DeliveryEnrichmentClient = Pick<GitHubApiClient, "getPullRequest">;
 
+export type AiSummarizer = {
+  isAvailable: () => boolean;
+  generate: (
+    events: StoredEvent[],
+    pullRequestDetails: Map<string, GitHubPullRequestDetail>
+  ) => Promise<string | null>;
+};
+
+const defaultAiSummarizer: AiSummarizer = {
+  isAvailable: isAiSummaryAvailable,
+  generate: (events, pullRequestDetails) =>
+    generateAiSummary(events, { pullRequestDetails })
+};
+
 export type DeliveryTaskOptions = DeliveryTaskInput & {
   store?: DeliveryStore;
   sendMessage: DeliverySendMessage;
   enrichmentClient?: DeliveryEnrichmentClient;
+  aiSummarizer?: AiSummarizer;
   now?: Date;
   isShuttingDown?: () => boolean;
 };
@@ -336,7 +352,25 @@ const executeDeliveryTask = async (
         )
       : new Map<string, GitHubPullRequestDetail>();
 
-  const messages = renderEventDigest(matchingEvents, { pullRequestDetails });
+  const aiSummarizer = options.aiSummarizer ?? defaultAiSummarizer;
+  let messages: string[] | null = null;
+
+  if (subscription.aiSummary && aiSummarizer.isAvailable()) {
+    const summaryText = await aiSummarizer.generate(
+      matchingEvents,
+      pullRequestDetails
+    );
+
+    if (summaryText === null) {
+      taskLogger.warn("ai summary unavailable, falling back to standard digest");
+    } else {
+      messages = [renderAiDigest(summaryText, matchingEvents)];
+    }
+  }
+
+  if (messages === null) {
+    messages = renderEventDigest(matchingEvents, { pullRequestDetails });
+  }
 
   for (const message of messages) {
     await options.sendMessage(subscription.chatId, message);
