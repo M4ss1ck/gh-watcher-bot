@@ -356,15 +356,19 @@ const executeDeliveryTask = async (
   let messages: string[] | null = null;
 
   if (subscription.aiSummary && aiSummarizer.isAvailable()) {
-    const summaryText = await aiSummarizer.generate(
-      matchingEvents,
-      pullRequestDetails
-    );
+    try {
+      const summaryText = await aiSummarizer.generate(
+        matchingEvents,
+        pullRequestDetails
+      );
 
-    if (summaryText === null) {
-      taskLogger.warn("ai summary unavailable, falling back to standard digest");
-    } else {
-      messages = [renderAiDigest(summaryText, matchingEvents)];
+      if (summaryText === null) {
+        taskLogger.warn("ai summary unavailable, falling back to standard digest");
+      } else {
+        messages = [renderAiDigest(summaryText, matchingEvents)];
+      }
+    } catch (error) {
+      taskLogger.warn({ err: error }, "ai summary threw, falling back to standard digest");
     }
   }
 

@@ -287,6 +287,32 @@ describe("runDeliveryTask with ai summaries", () => {
     expect(cursorWrites.length).toBe(1);
   });
 
+  test("falls back to the mechanical digest when the summarizer throws", async () => {
+    const { cursorWrites, store } = storeWithSubscription([pushEvent], aiSubscription);
+    const sentMessages: string[] = [];
+
+    const result = await runDeliveryTask({
+      subscriptionId: aiSubscription.id,
+      store,
+      sendMessage: async (_chatId, text) => {
+        sentMessages.push(text);
+      },
+      aiSummarizer: {
+        isAvailable: () => true,
+        generate: async () => {
+          throw new Error("provider exploded");
+        }
+      },
+      now: new Date("2026-05-20T13:00:00Z")
+    });
+
+    expect(result.status).toBe("ok");
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0]).not.toContain("AI summary");
+    expect(sentMessages[0]).toContain("GitHub activity digest");
+    expect(cursorWrites.length).toBe(1);
+  });
+
   test("does not call the summarizer when the subscription has it off", async () => {
     const { store } = storeWithSubscription([pushEvent], subscription);
     let generateCalls = 0;

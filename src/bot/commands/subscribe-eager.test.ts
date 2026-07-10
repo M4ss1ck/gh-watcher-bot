@@ -63,6 +63,7 @@ mock.module("~/db/queries", () => ({
     return githubClient.getUser(login);
   },
   setKvValue: async () => undefined,
+  setSubscriptionAiSummary: async () => {},
   setSubscriptionPaused: async () => undefined,
   updateSubscriptionFilters: async () => undefined,
   updateSubscriptionSchedule: async () => undefined

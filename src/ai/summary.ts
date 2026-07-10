@@ -82,9 +82,9 @@ export const generateAiSummary = async (
   }
 
   const fetchImpl = options.fetchImpl ?? fetch;
-  const input = buildAiSummaryInput(events, options.pullRequestDetails ?? new Map());
 
   try {
+    const input = buildAiSummaryInput(events, options.pullRequestDetails ?? new Map());
     const response = await fetchImpl(apiUrl, {
       method: "POST",
       headers: {
