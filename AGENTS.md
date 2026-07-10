@@ -93,7 +93,7 @@ Use exactly these tables. Field names match.
 - `github_repos`: `id` (PK, GitHub numeric repo ID), `accountId` (FK → github_accounts, cascade delete), `name` (repo name without owner), `etag`, `lastEventId`, `lastPolledAt`, `consecutiveFailures` (default 0), `pausedUntil` (nullable), `createdAt`. Unique on `(accountId, name)`.
 - `events`: `id` (PK, GitHub event ID string), `accountId` (FK → github_accounts, cascade delete), `type`, `repoName`, `actorLogin`, `payload` (JSON), `createdAt` (GitHub timestamp), `ingestedAt`. Index on `(accountId, createdAt)` and `type`.
 - `chats`: `id` (PK, Telegram chat ID, signed 64-bit), `type` ("private"|"group"|"supergroup"|"channel"), `title`, `addedByUserId`, `active` (default true), `banned` (default false), `addedAt`, `deactivatedAt`.
-- `subscriptions`: `id` (PK auto), `chatId` (FK → chats, cascade), `accountId` (FK → github_accounts, restrict), `preset` ("firehose"|"releases_only"|"prs_and_releases"|"code_activity"|"new_stuff"|"custom"), `filters` (JSON), `schedulePreset` ("hourly"|"every_6h"|"daily_09"|"daily_18"|"weekly_mon_09"), `timezone` (default "UTC"), `lastDeliveredAt` (nullable cursor), `selectedRepos` (JSON array of repo names, nullable; `NULL` means all repos), `paused` (default false), `createdAt`, `createdByUserId`. Unique on `(chatId, accountId)`.
+- `subscriptions`: `id` (PK auto), `chatId` (FK → chats, cascade), `accountId` (FK → github_accounts, restrict), `preset` ("firehose"|"releases_only"|"prs_and_releases"|"code_activity"|"new_stuff"|"custom"), `filters` (JSON), `schedulePreset` ("as_fetched"|"hourly"|"every_6h"|"daily_09"|"daily_18"|"weekly_mon_09"), `timezone` (default "UTC"), `lastDeliveredAt` (nullable cursor), `selectedRepos` (JSON array of repo names, nullable; `NULL` means all repos), `paused` (default false), `aiSummary` (default false), `createdAt`, `createdByUserId`. Unique on `(chatId, accountId)`.
 - `kv`: `key` (PK), `value`, `updatedAt`. Used for heartbeats and counters.
 
 No `nextDeliveryAt` field — croner owns scheduling state.
@@ -113,6 +113,7 @@ No `delivery_log` table — cursor is the source of truth.
 ## Delivery
 
 - One Croner job per active subscription. Cron expression derived from `schedulePreset` + `timezone`.
+  - `as_fetched` → the collector's `POLL_INTERVAL_CRON` (admin-only preset)
   - `hourly` → `0 * * * *`
   - `every_6h` → `0 */6 * * *`
   - `daily_09` → `0 9 * * *`
@@ -126,7 +127,7 @@ No `delivery_log` table — cursor is the source of truth.
   3. Query events for `accountId` newer than `lastDeliveredAt` (or all if null).
   4. Apply filters (`/filters/apply.ts`).
   5. If 0 events pass: do not send anything. Advance cursor to `now`. Log at debug.
-  6. If >0: render with `/formatting/render.ts`. Send to chat. On success, advance cursor to the newest event's `createdAt`.
+  6. If >0: render with `/formatting/render.ts`. If the subscription has `aiSummary` on and `OPENCODE_API_KEY` is set, ask `/src/ai/summary.ts` for a prose summary (opencode Go, `deepseek-v4-flash`, 30s timeout) and send it as a single message rendered by `renderAiDigest`; on any AI failure fall back to the standard digest. Send to chat. On success, advance cursor to the newest event's `createdAt`.
   7. On Telegram send failure: log error, do NOT advance cursor. The next scheduled run will retry.
 - Write a heartbeat (`key="deliverer.last_tick"`) after each delivery task settles (success or failure).
 
@@ -136,11 +137,12 @@ Filter JSON shape (validated with zod on save):
 
 ```ts
 {
-  events: ("push"|"pull_request"|"issues"|"release"|"repository"|"fork"|"star"|"create")[],
+  events: ("push"|"pull_request_opened"|"pull_request_closed"|"pull_request_merged"|"pull_request_reopened"|"issue_opened"|"issue_closed"|"issue_reopened"|"release"|"repository"|"fork"|"star"|"branch_created"|"tag_created")[],
   repos: { include: string[], exclude: string[] },     // globs, default { include: ["*"], exclude: [] }
   ignoreBotAuthors: boolean,                            // default true
   minCommitsPerPush: number,                            // default 1
-  branches: { include: string[], exclude: string[] }    // globs, default { include: ["*"], exclude: [] }
+  branches: { include: string[], exclude: string[] },   // globs, default { include: ["*"], exclude: [] }
+  enrichMergedPullRequests: boolean                     // default false
 }
 ```
 
@@ -148,9 +150,9 @@ Presets (`/filters/presets.ts`):
 
 - `firehose`: all events, all repos, ignoreBotAuthors: false
 - `releases_only`: events: ["release"]
-- `prs_and_releases`: events: ["pull_request", "release", "repository"]
-- `code_activity`: events: ["push", "pull_request"], branches.include: ["main", "master"], ignoreBotAuthors: true
-- `new_stuff`: events: ["repository", "release", "fork", "star", "create"]
+- `prs_and_releases`: events: ["pull_request_opened", "pull_request_closed", "pull_request_merged", "pull_request_reopened", "release", "repository"]
+- `code_activity`: events: ["push", "pull_request_opened", "pull_request_closed", "pull_request_merged", "pull_request_reopened"], branches.include: ["main", "master"], ignoreBotAuthors: true
+- `new_stuff`: events: ["repository", "release", "fork", "star", "branch_created", "tag_created"]
 
 When a user toggles a filter in the menu away from preset defaults, set `subscriptions.preset = "custom"`. "Reset to preset" sets it back and restores the preset's JSON.
 
@@ -217,21 +219,28 @@ Layout (header is the static info, buttons are below):
 
 ```
 [ Header text with @username, preset, schedule, status, last delivery summary ]
-[ ⚙️ Filters ]    [ 🕐 Schedule ]    [ 🌍 Timezone ]
+[ 🎛 Preset ]    [ ⚙️ Filters ]
+[ 🕐 Schedule ]    [ 🌍 Timezone ]
 [ ⏸ Pause OR ▶️ Resume ]    [ 👁 Preview now ].primary()
+[ 🤖 AI summary: ☑️/☐ ]
 [ 🗑 Delete ].danger()
 [ ◀️ Back ]
 ```
+
+The AI summary toggle is shown only when `OPENCODE_API_KEY` is configured; plain toggle, no button style.
 
 ### Filter editor menu
 
 Layout (one button per event type, two per row, toggleable; then repos line; then ignore-bots; then footer):
 
 ```
-[ ☑️ push ]    [ ☑️ pull_request ]
-[ ☐ issues ]    [ ☑️ release ]
+[ ☑️ push ]    [ ☑️ release ]
+[ ☑️ PR opened ]    [ ☐ PR closed ]
+[ ☐ PR merged ]    [ ☐ PR reopened ]
+[ ☐ Issue opened ]    [ ☐ Issue closed ]
+[ ☐ Issue reopened ]    [ ☑️ repository ]
+[ ☐ branch created ]    [ ☐ tag created ]
 [ ☐ fork ]    [ ☑️ star ]
-[ ☑️ repository ]    [ ☐ create ]
 [ 📁 Repos: all (tap to refine) ]
 [ 🤖 Ignore bot authors: ☑️ ]
 [ 💾 Save ].success()    [ 🔄 Reset to preset ]    [ ❌ Cancel ]
@@ -276,6 +285,7 @@ Counters:
 - `deliveries_sent_total{status: "ok"|"empty"|"error"}`
 - `delivery_duration_ms` (rolling histogram, last 100)
 - `telegram_api_errors_total{code}`
+- `ai_summaries_total{status: "ok"|"error"}`
 - `subscriptions_active` (gauge, recomputed on read)
 - `chats_active` (gauge, recomputed on read)
 
@@ -298,6 +308,7 @@ Optional with defaults:
 - `MAX_SUBS_PER_CHAT` (default 20)
 - `REPO_POLL_THRESHOLD` (default 5)
 - `GITHUB_TOKEN` — if set, used to authenticate GitHub requests for the higher rate limit. Still public events only.
+- `OPENCODE_API_KEY` - if set, enables the per-subscription AI summary toggle (opencode Go API). If unset, the feature is hidden.
 
 `/.env.example` lists all of these with safe placeholder values.
 
@@ -345,7 +356,7 @@ Single-service compose. The volume mounts `./data` for the local SQLite file in 
 - Do not write inline SQL outside `/db/queries.ts`.
 - Do not add support for private GitHub events, GitHub Apps, or OAuth in v1.
 - Do not introduce multi-replica logic, leader election, or distributed locks.
-- Do not emit any external HTTP request that is not to `api.telegram.org` or `api.github.com`.
+- Do not emit any external HTTP request that is not to `api.telegram.org`, `api.github.com`, or `opencode.ai` (AI summaries only, from `/src/ai/summary.ts`).
 
 ## Testing
 
