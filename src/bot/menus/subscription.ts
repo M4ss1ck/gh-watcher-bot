@@ -2,6 +2,7 @@
 import { Menu } from "@grammyjs/menu";
 import type { Context } from "grammy";
 
+import { isAiSummaryAvailable } from "~/ai/summary";
 import { getDeliverer, getGitHubClient } from "~/bot/menus/deps";
 import {
   filtersMenuId,
@@ -28,6 +29,7 @@ import { requireChatAdminCallback } from "~/bot/middleware/chatAdminOnly";
 import {
   deleteSubscription,
   getGitHubAccountById,
+  setSubscriptionAiSummary,
   setSubscriptionPaused
 } from "~/db/queries";
 import type { GitHubAccountForPolling } from "~/db/queries";
@@ -255,6 +257,40 @@ export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
       await ctx.reply("Preview failed. Try again later.");
       await ctx.answerCallbackQuery({ text: "Preview failed." });
     }
+  })
+  .row()
+  .dynamic((_ctx, range) => {
+    if (!isAiSummaryAvailable()) {
+      return range;
+    }
+
+    range.text(
+      (ctx) => {
+        const key = menuKeyFromContext(ctx);
+        const state = key === null ? null : getSelectedSubscription(key);
+
+        return state?.aiSummary === true ? "🤖 AI summary: ☑️" : "🤖 AI summary: ☐";
+      },
+      async (ctx) => {
+        if (!(await requireChatAdminCallback(ctx))) {
+          return;
+        }
+
+        const key = menuKeyFromContext(ctx);
+        const state = key === null ? null : getSelectedSubscription(key);
+
+        if (key === null || state === null) {
+          return;
+        }
+
+        const nextAiSummary = !state.aiSummary;
+        await setSubscriptionAiSummary(state.id, nextAiSummary);
+        updateSelectedSubscription(key, { aiSummary: nextAiSummary });
+        await editToCurrentSubscription(ctx);
+      }
+    );
+
+    return range;
   })
   .row()
   .submenu("🗑 Delete", subscriptionDeleteConfirmMenuId, async (ctx) => {

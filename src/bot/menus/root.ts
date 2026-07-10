@@ -2,6 +2,7 @@
 import { Menu, MenuRange } from "@grammyjs/menu";
 import type { Context, Transformer } from "grammy";
 
+import { isAiSummaryAvailable } from "~/ai/summary";
 import type { SubscriptionListItem } from "~/db/queries";
 import { formatDateTimeInTimeZone } from "~/formatting/dates";
 import {
@@ -72,6 +73,7 @@ const setSelectionFromListItem = (ctx: Context, item: SubscriptionListItem): voi
     timezone: item.timezone,
     selectedRepos: item.selectedRepos,
     paused: item.paused,
+    aiSummary: item.aiSummary,
     lastDeliveredAt: item.lastDeliveredAt
   };
 
@@ -166,6 +168,7 @@ export const rootMenu = new Menu<Context>(rootMenuId)
             timezone: item.timezone,
             selectedRepos: item.selectedRepos,
             paused: item.paused,
+            aiSummary: item.aiSummary,
             lastDeliveredAt: item.lastDeliveredAt
           }));
         })
@@ -204,6 +207,9 @@ export const buildSubscriptionMenuTextFromState = (
   `Timezone: ${state.timezone}`,
   `Repos: ${state.selectedRepos === null ? "all repos" : `${state.selectedRepos.length} selected`}`,
   `Status: ${state.paused ? "paused" : "active"}`,
+  ...(isAiSummaryAvailable()
+    ? [`AI summary: ${state.aiSummary ? "on" : "off"}`]
+    : []),
   `Last delivery: ${state.lastDeliveredAt === null ? "never" : formatDateTimeInTimeZone(state.lastDeliveredAt, state.timezone)}`
 ].join("\n");
 

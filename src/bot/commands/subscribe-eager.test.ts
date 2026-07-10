@@ -123,6 +123,7 @@ describe("/subscribe eager creation", () => {
       timezone: "UTC",
       selectedRepos: null,
       paused: false,
+      aiSummary: false,
       lastDeliveredAt: null
     });
     expect(replies).toContain(
@@ -141,6 +142,7 @@ describe("/subscribe eager creation", () => {
         "Timezone: UTC",
         "Repos: all repos",
         "Status: active",
+        "AI summary: off",
         "Last delivery: never"
       ].join("\n")
     );

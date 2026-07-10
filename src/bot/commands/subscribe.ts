@@ -231,6 +231,7 @@ const openSubscriptionForUsername = async (
       timezone: "UTC",
       selectedRepos,
       paused: false,
+      aiSummary: existingSubscription?.aiSummary ?? false,
       lastDeliveredAt: null
     };
 

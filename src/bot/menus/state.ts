@@ -21,6 +21,7 @@ export type SubscriptionMenuState = {
   timezone: string;
   selectedRepos: string[] | null;
   paused: boolean;
+  aiSummary: boolean;
   lastDeliveredAt: Date | null;
 };
 

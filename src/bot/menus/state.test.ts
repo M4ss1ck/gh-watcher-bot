@@ -24,6 +24,7 @@ const baseState = (overrides: Partial<SubscriptionMenuState> = {}): Subscription
   timezone: "UTC",
   selectedRepos: null,
   paused: false,
+  aiSummary: false,
   lastDeliveredAt: null,
   ...overrides
 });

@@ -50,6 +50,7 @@ describe("subscription root menu helpers", () => {
         timezone: "America/Santiago",
         selectedRepos: null,
         paused: false,
+        aiSummary: false,
         lastDeliveredAt: new Date("2026-05-20T12:30:00Z")
       })
     ).toBe(
@@ -60,9 +61,28 @@ describe("subscription root menu helpers", () => {
         "Timezone: America/Santiago",
         "Repos: all repos",
         "Status: active",
+        "AI summary: off",
         "Last delivery: 2026-05-20 08:30 America/Santiago"
       ].join("\n")
     );
+  });
+
+  test("renders the AI summary line as on when enabled", () => {
+    expect(
+      buildSubscriptionMenuTextFromState({
+        id: 1,
+        accountId: 1,
+        accountLogin: "octocat",
+        preset: "firehose",
+        filters: filterPresets.firehose,
+        schedulePreset: "hourly",
+        timezone: "UTC",
+        selectedRepos: null,
+        paused: false,
+        aiSummary: true,
+        lastDeliveredAt: null
+      })
+    ).toContain("AI summary: on");
   });
 
   test("applies Bot API button styles to known labels", () => {

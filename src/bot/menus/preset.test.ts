@@ -49,6 +49,7 @@ describe("subscription preset menu helpers", () => {
       timezone: "UTC",
       selectedRepos: null,
       paused: false,
+      aiSummary: false,
       lastDeliveredAt: null
     });
     setPresetDraft(key, "releases_only");
