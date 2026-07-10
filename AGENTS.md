@@ -175,7 +175,7 @@ Rules:
 - `.primary()` (blue): primary CTA on a screen. Examples: Add new subscription, Preview now.
 - No style (default): toggles, navigation (Back), reversible state changes (Pause).
 - Maximum one `.success()`, one `.danger()`, one `.primary()` per menu screen. If a screen would have more, the screen is doing too much — split it.
-- Filter toggles use `☑️`/`☐` in the label; do not also add `.success()` to toggled-on buttons.
+- Filter toggles use `✅`/`⬜` in the label; do not also add `.success()` to toggled-on buttons.
 
 ### Commands
 
@@ -222,7 +222,7 @@ Layout (header is the static info, buttons are below):
 [ 🎛 Preset ]    [ ⚙️ Filters ]
 [ 🕐 Schedule ]    [ 🌍 Timezone ]
 [ ⏸ Pause OR ▶️ Resume ]    [ 👁 Preview now ].primary()
-[ 🤖 AI summary: ☑️/☐ ]
+[ 🤖 AI summary: ✅/⬜ ]
 [ 🗑 Delete ].danger()
 [ ◀️ Back ]
 ```
@@ -234,15 +234,15 @@ The AI summary toggle is shown only when `OPENCODE_API_KEY` is configured; plain
 Layout (one button per event type, two per row, toggleable; then repos line; then ignore-bots; then footer):
 
 ```
-[ ☑️ push ]    [ ☑️ release ]
-[ ☑️ PR opened ]    [ ☐ PR closed ]
-[ ☐ PR merged ]    [ ☐ PR reopened ]
-[ ☐ Issue opened ]    [ ☐ Issue closed ]
-[ ☐ Issue reopened ]    [ ☑️ repository ]
-[ ☐ branch created ]    [ ☐ tag created ]
-[ ☐ fork ]    [ ☑️ star ]
+[ ✅ push ]    [ ✅ release ]
+[ ✅ PR opened ]    [ ⬜ PR closed ]
+[ ⬜ PR merged ]    [ ⬜ PR reopened ]
+[ ⬜ Issue opened ]    [ ⬜ Issue closed ]
+[ ⬜ Issue reopened ]    [ ✅ repository ]
+[ ⬜ branch created ]    [ ⬜ tag created ]
+[ ⬜ fork ]    [ ✅ star ]
 [ 📁 Repos: all (tap to refine) ]
-[ 🤖 Ignore bot authors: ☑️ ]
+[ 🤖 Ignore bot authors: ✅ ]
 [ 💾 Save ].success()    [ 🔄 Reset to preset ]    [ ❌ Cancel ]
 ```
 

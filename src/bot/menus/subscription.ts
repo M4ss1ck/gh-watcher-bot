@@ -269,7 +269,7 @@ export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
         const key = menuKeyFromContext(ctx);
         const state = key === null ? null : getSelectedSubscription(key);
 
-        return state?.aiSummary === true ? "🤖 AI summary: ☑️" : "🤖 AI summary: ☐";
+        return state?.aiSummary === true ? "🤖 AI summary: ✅" : "🤖 AI summary: ⬜";
       },
       async (ctx) => {
         if (!(await requireChatAdminCallback(ctx))) {
