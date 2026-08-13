@@ -10,9 +10,14 @@ import {
   summaryTokenBudget,
   totalBudgetMs
 } from "~/ai/summary";
+import { summarizeEvent } from "~/formatting/summarize";
+import type { GitHubPullRequestDetail, StoredEvent } from "~/github/types";
 import { getMetricsSnapshot, resetMetricsForTests } from "~/lib/metrics";
-import type { StoredEvent } from "~/github/types";
-import { pushEvent, releaseEvent } from "~/test/fixtures/github-events";
+import {
+  pullRequestEvent,
+  pushEvent,
+  releaseEvent
+} from "~/test/fixtures/github-events";
 
 const okResponse = (content: string): Response =>
   new Response(
@@ -31,6 +36,19 @@ const eventsForRepos = (count: number): StoredEvent[] =>
     createdAt: new Date("2026-01-01T00:00:00Z")
   }));
 
+const mergedPrDetail = (body: string): GitHubPullRequestDetail => ({
+  number: 150,
+  title: "Add offline cache",
+  body,
+  htmlUrl: "https://github.com/octocat/hello-world/pull/150",
+  merged: true,
+  mergedBy: "M4ss1ck",
+  additions: 412,
+  deletions: 38,
+  changedFiles: 9,
+  commits: 6
+});
+
 describe("buildAiSummaryInput", () => {
   test("groups event lines by repository", () => {
     const input = buildAiSummaryInput([pushEvent, releaseEvent], new Map());
@@ -38,6 +56,42 @@ describe("buildAiSummaryInput", () => {
     expect(input).toContain(pushEvent.repoName);
     expect(input).toContain(releaseEvent.repoName);
     expect(input).toContain(pushEvent.actorLogin);
+  });
+
+  test("carries more pull request body than the mechanical digest keeps", () => {
+    const longBody = "x".repeat(700);
+    const details = new Map([[pullRequestEvent.id, mergedPrDetail(longBody)]]);
+    const input = buildAiSummaryInput([pullRequestEvent], details);
+
+    // The mechanical renderer truncates the body at 240; the AI input gets 800.
+    expect(input).toContain("x".repeat(600));
+    expect(input.length).toBeGreaterThan(400);
+  });
+});
+
+describe("summarizeEvent body budget", () => {
+  const longBody = "y".repeat(900);
+
+  test("truncates the pull request body at 240 characters by default", () => {
+    const summary = summarizeEvent(pullRequestEvent, {
+      pullRequestDetail: mergedPrDetail(longBody)
+    });
+    const bodyExtra = summary.extra.find((entry) => entry.startsWith("y"));
+
+    expect(bodyExtra).toBeDefined();
+    expect(bodyExtra!.length).toBeLessThanOrEqual(240);
+  });
+
+  test("honors a larger bodyMaxLength when one is supplied", () => {
+    const summary = summarizeEvent(pullRequestEvent, {
+      pullRequestDetail: mergedPrDetail(longBody),
+      bodyMaxLength: 800
+    });
+    const bodyExtra = summary.extra.find((entry) => entry.startsWith("y"));
+
+    expect(bodyExtra).toBeDefined();
+    expect(bodyExtra!.length).toBeGreaterThan(240);
+    expect(bodyExtra!.length).toBeLessThanOrEqual(800);
   });
 });
 
@@ -69,7 +123,7 @@ describe("generateAiSummary", () => {
     });
 
     const body = JSON.parse(requestBody);
-    expect(body.max_tokens).toBe(180);
+    expect(body.max_tokens).toBe(260);
     expect(body.temperature).toBe(0.2);
   });
 
@@ -86,10 +140,13 @@ describe("generateAiSummary", () => {
     const body = JSON.parse(requestBody);
     const systemPrompt = body.messages[0].content;
 
-    expect(systemPrompt).toContain("Write ONE sentence per repository");
-    expect(systemPrompt).toContain("Never more than 4 sentences in total");
+    expect(systemPrompt).toContain("Length must match how much there is to say");
+    expect(systemPrompt).toContain("drawing on that description");
+    expect(systemPrompt).toContain("Never exceed 6 sentences in total");
     expect(systemPrompt).toContain("completing the change");
     expect(systemPrompt).toContain("M4ss1ck merged PR #143");
+    expect(systemPrompt).toContain("brevity comes from thin input");
+    expect(systemPrompt).toContain("M4ss1ck merged PR #150");
   });
 
   test("returns null on a non-200 response", async () => {
@@ -246,14 +303,16 @@ describe("generateAiSummary", () => {
 
 describe("summaryTokenBudget", () => {
   test("scales with the number of distinct repositories", () => {
-    expect(summaryTokenBudget([pushEvent])).toBe(100);
-    expect(summaryTokenBudget([pushEvent, releaseEvent])).toBe(100);
-    expect(summaryTokenBudget(eventsForRepos(3))).toBe(180);
+    // Both fixtures share one repo name, so these sit on the floor.
+    expect(summaryTokenBudget([pushEvent])).toBe(150);
+    expect(summaryTokenBudget([pushEvent, releaseEvent])).toBe(150);
+    expect(summaryTokenBudget(eventsForRepos(3))).toBe(260);
+    expect(summaryTokenBudget(eventsForRepos(5))).toBe(380);
   });
 
   test("stays within the floor and the cap", () => {
-    expect(summaryTokenBudget([])).toBe(100);
-    expect(summaryTokenBudget(eventsForRepos(20))).toBe(400);
+    expect(summaryTokenBudget([])).toBe(150);
+    expect(summaryTokenBudget(eventsForRepos(20))).toBe(500);
   });
 });
 

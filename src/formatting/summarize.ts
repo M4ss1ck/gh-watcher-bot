@@ -95,9 +95,12 @@ const pushSummary = (event: StoredEvent): EventSummary => {
 const truncate = (value: string, max: number): string =>
   value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`;
 
+const defaultBodyMaxLength = 240;
+
 const pullRequestSummary = (
   event: StoredEvent,
-  detail: GitHubPullRequestDetail | null
+  detail: GitHubPullRequestDetail | null,
+  bodyMaxLength: number
 ): EventSummary => {
   const pullRequest = event.payload.pull_request;
   const record = isRecord(pullRequest) ? pullRequest : {};
@@ -137,7 +140,7 @@ const pullRequestSummary = (
     }
 
     if (detail.body !== null && detail.body.trim() !== "") {
-      extra.push(truncate(detail.body.trim().replaceAll(/\s+/g, " "), 240));
+      extra.push(truncate(detail.body.trim().replaceAll(/\s+/g, " "), bodyMaxLength));
     }
   }
 
@@ -213,6 +216,7 @@ const forkSummary = (event: StoredEvent): EventSummary => {
 
 export type SummarizeOptions = {
   pullRequestDetail?: GitHubPullRequestDetail | null;
+  bodyMaxLength?: number;
 };
 
 export const summarizeEvent = (
@@ -223,7 +227,11 @@ export const summarizeEvent = (
     case "PushEvent":
       return pushSummary(event);
     case "PullRequestEvent":
-      return pullRequestSummary(event, options.pullRequestDetail ?? null);
+      return pullRequestSummary(
+        event,
+        options.pullRequestDetail ?? null,
+        options.bodyMaxLength ?? defaultBodyMaxLength
+      );
     case "ReleaseEvent":
       return releaseSummary(event);
     case "IssuesEvent":

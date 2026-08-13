@@ -10,10 +10,11 @@ const model = "deepseek-v4-flash";
 export const requestTimeoutMs = 12_000;
 const maxInputChars = 24_000;
 const maxSummaryChars = 3_000;
-const minSummaryTokens = 100;
-const maxSummaryTokens = 400;
-const summaryBaseTokens = 60;
-const summaryTokensPerRepo = 40;
+const aiBodyMaxChars = 800;
+const minSummaryTokens = 150;
+const maxSummaryTokens = 500;
+const summaryBaseTokens = 80;
+const summaryTokensPerRepo = 60;
 export const maxAttempts = 3;
 const retryBackoffMs = [1_000, 2_000];
 const maxJitterMs = 250;
@@ -24,8 +25,10 @@ const systemPrompt = `You summarize GitHub activity for a Telegram digest bot.
 
 Rules:
 - Plain text only. No markdown, no HTML, no headings, no bullet points.
-- Write ONE sentence per repository. Never more than 4 sentences in total.
-- If there is only one event, write ONE short sentence and stop.
+- Length must match how much there is to say. Do not pad, and do not omit real content either.
+- When the input holds nothing beyond the event itself, one short sentence for that repository is correct.
+- When a pull request description is present, say what the change actually does, drawing on that description. Up to three sentences for that repository is fine when there is that much real content.
+- Never exceed 6 sentences in total.
 - Start each sentence with the repository name.
 - Use active voice and always name the person who did it. Never write "a branch was created" without saying who created it.
 - State only what happened. Never explain why it matters, what it indicates, what it means, or what is most notable.
@@ -36,11 +39,18 @@ Rules:
 - Do not invent anything absent from the input.
 
 Examples:
+Neither pull request in the two pairs below had a description available, so one short line was all there was to say. Their brevity comes from thin input, not from a length target.
+
 bad: M4ss1ck/maibuk saw activity around a new branch and pull request. M4ss1ck created the branch M4ss1ck/projects-archive-books, then opened and later merged pull request #143, which brings that branch into the main branch. The merge is the most notable change, indicating the projects-archive-books work is now part of the main codebase.
 good: M4ss1ck/maibuk: M4ss1ck merged PR #143 (projects-archive-books) into main.
 
 bad: In M4ss1ck/maibuk, a new branch M4ss1ck/better-canvas was created, followed by pull request #142 from that branch into main. The pull request was subsequently opened and then merged, completing the change.
-good: M4ss1ck/maibuk: M4ss1ck merged PR #142 (better-canvas) into main.`;
+good: M4ss1ck/maibuk: M4ss1ck merged PR #142 (better-canvas) into main.
+
+good (rich input):
+input: - M4ss1ck merged pull request #150: Add offline cache (feature/offline-cache -> main) (+412 -38 across 9 files; 6 commits; Adds a service-worker layer that caches book pages and syncs reading progress when the connection returns. Falls back to the network when the cache is stale.)
+output: M4ss1ck/maibuk: M4ss1ck merged PR #150 (offline-cache), adding a service-worker layer that caches book pages and syncs reading progress when the connection returns, falling back to the network when the cache is stale.
+This output is longer because the input had more real content, not because longer is better.`;
 
 type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
 type DelayFn = (ms: number) => Promise<void>;
@@ -123,7 +133,8 @@ export const buildAiSummaryInput = (
 
   for (const event of events) {
     const summary = summarizeEvent(event, {
-      pullRequestDetail: pullRequestDetails.get(event.id) ?? null
+      pullRequestDetail: pullRequestDetails.get(event.id) ?? null,
+      bodyMaxLength: aiBodyMaxChars
     });
     const lines = byRepo.get(event.repoName) ?? [];
     const detail = summary.detail === null ? "" : `: ${summary.detail}`;
