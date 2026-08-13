@@ -1,7 +1,14 @@
 // Verifies AI summary input building and API response handling without live calls.
 import { describe, expect, test } from "bun:test";
 
-import { buildAiSummaryInput, generateAiSummary } from "~/ai/summary";
+import {
+  buildAiSummaryInput,
+  clampRetryDelay,
+  generateAiSummary,
+  maxAttempts,
+  requestTimeoutMs,
+  totalBudgetMs
+} from "~/ai/summary";
 import { getMetricsSnapshot, resetMetricsForTests } from "~/lib/metrics";
 import { pushEvent, releaseEvent } from "~/test/fixtures/github-events";
 
@@ -101,7 +108,7 @@ describe("generateAiSummary", () => {
         if (attempts === 1) {
           return new Response("rate limited", {
             status: 429,
-            headers: { "retry-after": "3" }
+            headers: { "retry-after": "5" }
           });
         }
         return okResponse("Done.");
@@ -109,7 +116,7 @@ describe("generateAiSummary", () => {
     });
 
     expect(result).toBe("Done.");
-    expect(waitedMs[0]).toBe(3000);
+    expect(waitedMs[0]).toBe(5000);
   });
 
   test("retries two 500s and succeeds on the third attempt", async () => {
@@ -187,5 +194,20 @@ describe("generateAiSummary", () => {
     });
 
     expect(getMetricsSnapshot().aiSummariesTotal.error).toBe(1);
+  });
+});
+
+describe("retry budget", () => {
+  test("worst case fits the total budget by construction", () => {
+    const maxTotalRetryDelayMs = totalBudgetMs - maxAttempts * requestTimeoutMs;
+
+    expect(maxAttempts * requestTimeoutMs + maxTotalRetryDelayMs).toBeLessThanOrEqual(totalBudgetMs);
+    expect(maxTotalRetryDelayMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test("clamps a retry delay that would exceed the remaining budget", () => {
+    expect(clampRetryDelay(5_000, totalBudgetMs)).toBe(5_000);
+    expect(clampRetryDelay(5_000, 13_000)).toBe(1_000);
+    expect(clampRetryDelay(1_000, 11_000)).toBeNull();
   });
 });

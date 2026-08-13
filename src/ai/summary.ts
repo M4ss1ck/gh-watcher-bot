@@ -7,13 +7,14 @@ import { incrementAiSummary } from "~/lib/metrics";
 
 const apiUrl = "https://opencode.ai/zen/go/v1/chat/completions";
 const model = "deepseek-v4-flash";
-const requestTimeoutMs = 12_000;
+export const requestTimeoutMs = 12_000;
 const maxInputChars = 24_000;
 const maxSummaryChars = 3_000;
-const maxAttempts = 3;
+export const maxAttempts = 3;
 const retryBackoffMs = [1_000, 2_000];
 const maxJitterMs = 250;
 const maxRetryAfterMs = 5_000;
+export const totalBudgetMs = 40_000;
 
 const systemPrompt = [
   "You summarize GitHub activity for a Telegram digest bot.",
@@ -37,7 +38,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 const jittered = (baseMs: number): number => baseMs + Math.random() * maxJitterMs;
 
-const retryDelayFor = (attempt: number, response: Response | null): number => {
+const plannedRetryDelayMs = (attempt: number, response: Response | null): number => {
   if (response !== null) {
     const retryAfterMs = parseRetryAfterMs(response);
     if (retryAfterMs !== null) {
@@ -46,6 +47,26 @@ const retryDelayFor = (attempt: number, response: Response | null): number => {
   }
 
   return jittered(retryBackoffMs[attempt - 1] ?? 0);
+};
+
+export const clampRetryDelay = (plannedMs: number, remainingBudgetMs: number): number | null => {
+  const maxDelayMs = remainingBudgetMs - requestTimeoutMs;
+
+  if (maxDelayMs < 0) {
+    return null;
+  }
+
+  return Math.min(plannedMs, maxDelayMs);
+};
+
+const retryDelayFor = (attempt: number, response: Response | null, startedAt: number): number | null => {
+  if (attempt >= maxAttempts) {
+    return null;
+  }
+
+  const remainingBudgetMs = totalBudgetMs - (Date.now() - startedAt);
+
+  return clampRetryDelay(plannedRetryDelayMs(attempt, response), remainingBudgetMs);
 };
 
 const parseRetryAfterMs = (response: Response): number | null => {
@@ -122,10 +143,11 @@ export const generateAiSummary = async (
   const delay = options.delay ?? sleep;
   const input = buildAiSummaryInput(events, options.pullRequestDetails ?? new Map());
 
+  const startedAt = Date.now();
   let attempts = 0;
   let lastStatus: number | null = null;
 
-  while (attempts < maxAttempts) {
+  while (true) {
     attempts += 1;
 
     try {
@@ -150,24 +172,26 @@ export const generateAiSummary = async (
       lastStatus = response.status;
 
       if (response.status === 429 || response.status >= 500) {
-        if (attempts < maxAttempts) {
-          logger.debug(
-            { attempt: attempts, status: response.status },
-            "ai summary request failed, retrying"
+        const retryDelayMs = retryDelayFor(attempts, response, startedAt);
+
+        if (retryDelayMs === null) {
+          logger.warn(
+            { status: response.status, attempts, event_count: events.length },
+            "ai summary request failed"
           );
+          incrementAiSummary("error");
 
-          await delay(retryDelayFor(attempts, response));
-
-          continue;
+          return null;
         }
 
-        logger.warn(
-          { status: response.status, attempts, event_count: events.length },
-          "ai summary request failed"
+        logger.debug(
+          { attempt: attempts, status: response.status },
+          "ai summary request failed, retrying"
         );
-        incrementAiSummary("error");
 
-        return null;
+        await delay(retryDelayMs);
+
+        continue;
       }
 
       if (!response.ok) {
@@ -183,18 +207,20 @@ export const generateAiSummary = async (
       const text = extractCompletionText(await response.json())?.trim() ?? "";
 
       if (text.length === 0) {
-        if (attempts < maxAttempts) {
-          logger.debug({ attempt: attempts }, "ai summary response was empty, retrying");
+        const retryDelayMs = retryDelayFor(attempts, null, startedAt);
 
-          await delay(retryDelayFor(attempts, null));
+        if (retryDelayMs === null) {
+          logger.warn({ attempts, event_count: events.length }, "ai summary response was empty");
+          incrementAiSummary("error");
 
-          continue;
+          return null;
         }
 
-        logger.warn({ attempts, event_count: events.length }, "ai summary response was empty");
-        incrementAiSummary("error");
+        logger.debug({ attempt: attempts }, "ai summary response was empty, retrying");
 
-        return null;
+        await delay(retryDelayMs);
+
+        continue;
       }
 
       incrementAiSummary("ok");
@@ -203,25 +229,23 @@ export const generateAiSummary = async (
         ? `${text.slice(0, maxSummaryChars - 1).trimEnd()}…`
         : text;
     } catch (error) {
-      if (attempts < maxAttempts) {
-        logger.debug({ attempt: attempts, err: error }, "ai summary request errored, retrying");
+      const retryDelayMs = retryDelayFor(attempts, null, startedAt);
 
-        await delay(retryDelayFor(attempts, null));
+      if (retryDelayMs === null) {
+        logger.warn(
+          { err: error, attempts, last_status: lastStatus, event_count: events.length },
+          "ai summary request errored"
+        );
+        incrementAiSummary("error");
 
-        continue;
+        return null;
       }
 
-      logger.warn(
-        { err: error, attempts, last_status: lastStatus, event_count: events.length },
-        "ai summary request errored"
-      );
-      incrementAiSummary("error");
+      logger.debug({ attempt: attempts, err: error }, "ai summary request errored, retrying");
 
-      return null;
+      await delay(retryDelayMs);
+
+      continue;
     }
   }
-
-  incrementAiSummary("error");
-
-  return null;
 };
