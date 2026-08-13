@@ -7,9 +7,13 @@ import { incrementAiSummary } from "~/lib/metrics";
 
 const apiUrl = "https://opencode.ai/zen/go/v1/chat/completions";
 const model = "deepseek-v4-flash";
-const requestTimeoutMs = 30_000;
+const requestTimeoutMs = 12_000;
 const maxInputChars = 24_000;
 const maxSummaryChars = 3_000;
+const maxAttempts = 3;
+const retryBackoffMs = [1_000, 2_000];
+const maxJitterMs = 250;
+const maxRetryAfterMs = 5_000;
 
 const systemPrompt = [
   "You summarize GitHub activity for a Telegram digest bot.",
@@ -20,11 +24,44 @@ const systemPrompt = [
 ].join(" ");
 
 type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
+type DelayFn = (ms: number) => Promise<void>;
 
 export type GenerateAiSummaryOptions = {
   pullRequestDetails?: Map<string, GitHubPullRequestDetail>;
   fetchImpl?: FetchImpl;
   apiKey?: string;
+  delay?: DelayFn;
+};
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const jittered = (baseMs: number): number => baseMs + Math.random() * maxJitterMs;
+
+const retryDelayFor = (attempt: number, response: Response | null): number => {
+  if (response !== null) {
+    const retryAfterMs = parseRetryAfterMs(response);
+    if (retryAfterMs !== null) {
+      return retryAfterMs;
+    }
+  }
+
+  return jittered(retryBackoffMs[attempt - 1] ?? 0);
+};
+
+const parseRetryAfterMs = (response: Response): number | null => {
+  const header = response.headers.get("retry-after");
+  if (header === null) {
+    return null;
+  }
+
+  const seconds = Number(header);
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+
+  const ms = Math.round(seconds * 1000);
+
+  return ms <= maxRetryAfterMs ? ms : null;
 };
 
 export const isAiSummaryAvailable = (): boolean =>
@@ -82,55 +119,109 @@ export const generateAiSummary = async (
   }
 
   const fetchImpl = options.fetchImpl ?? fetch;
+  const delay = options.delay ?? sleep;
+  const input = buildAiSummaryInput(events, options.pullRequestDetails ?? new Map());
 
-  try {
-    const input = buildAiSummaryInput(events, options.pullRequestDetails ?? new Map());
-    const response = await fetchImpl(apiUrl, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: input }
-        ],
-        temperature: 0.3,
-        max_tokens: 1_000
-      }),
-      signal: AbortSignal.timeout(requestTimeoutMs)
-    });
+  let attempts = 0;
+  let lastStatus: number | null = null;
 
-    if (!response.ok) {
+  while (attempts < maxAttempts) {
+    attempts += 1;
+
+    try {
+      const response = await fetchImpl(apiUrl, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: input }
+          ],
+          temperature: 0.3,
+          max_tokens: 1_000
+        }),
+        signal: AbortSignal.timeout(requestTimeoutMs)
+      });
+
+      lastStatus = response.status;
+
+      if (response.status === 429 || response.status >= 500) {
+        if (attempts < maxAttempts) {
+          logger.debug(
+            { attempt: attempts, status: response.status },
+            "ai summary request failed, retrying"
+          );
+
+          await delay(retryDelayFor(attempts, response));
+
+          continue;
+        }
+
+        logger.warn(
+          { status: response.status, attempts, event_count: events.length },
+          "ai summary request failed"
+        );
+        incrementAiSummary("error");
+
+        return null;
+      }
+
+      if (!response.ok) {
+        logger.warn(
+          { status: response.status, event_count: events.length },
+          "ai summary request failed"
+        );
+        incrementAiSummary("error");
+
+        return null;
+      }
+
+      const text = extractCompletionText(await response.json())?.trim() ?? "";
+
+      if (text.length === 0) {
+        if (attempts < maxAttempts) {
+          logger.debug({ attempt: attempts }, "ai summary response was empty, retrying");
+
+          await delay(retryDelayFor(attempts, null));
+
+          continue;
+        }
+
+        logger.warn({ attempts, event_count: events.length }, "ai summary response was empty");
+        incrementAiSummary("error");
+
+        return null;
+      }
+
+      incrementAiSummary("ok");
+
+      return text.length > maxSummaryChars
+        ? `${text.slice(0, maxSummaryChars - 1).trimEnd()}…`
+        : text;
+    } catch (error) {
+      if (attempts < maxAttempts) {
+        logger.debug({ attempt: attempts, err: error }, "ai summary request errored, retrying");
+
+        await delay(retryDelayFor(attempts, null));
+
+        continue;
+      }
+
       logger.warn(
-        { status: response.status, event_count: events.length },
-        "ai summary request failed"
+        { err: error, attempts, last_status: lastStatus, event_count: events.length },
+        "ai summary request errored"
       );
       incrementAiSummary("error");
 
       return null;
     }
-
-    const text = extractCompletionText(await response.json())?.trim() ?? "";
-
-    if (text.length === 0) {
-      logger.warn({ event_count: events.length }, "ai summary response was empty");
-      incrementAiSummary("error");
-
-      return null;
-    }
-
-    incrementAiSummary("ok");
-
-    return text.length > maxSummaryChars
-      ? `${text.slice(0, maxSummaryChars - 1).trimEnd()}…`
-      : text;
-  } catch (error) {
-    logger.warn({ err: error, event_count: events.length }, "ai summary request errored");
-    incrementAiSummary("error");
-
-    return null;
   }
+
+  incrementAiSummary("error");
+
+  return null;
 };

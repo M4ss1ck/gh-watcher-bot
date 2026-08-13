@@ -2,6 +2,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildAiSummaryInput, generateAiSummary } from "~/ai/summary";
+import { getMetricsSnapshot, resetMetricsForTests } from "~/lib/metrics";
 import { pushEvent, releaseEvent } from "~/test/fixtures/github-events";
 
 const okResponse = (content: string): Response =>
@@ -21,6 +22,8 @@ describe("buildAiSummaryInput", () => {
 });
 
 describe("generateAiSummary", () => {
+  const noopDelay = async (): Promise<void> => {};
+
   test("returns the model text on success", async () => {
     let requestBody = "";
     const result = await generateAiSummary([pushEvent], {
@@ -38,6 +41,7 @@ describe("generateAiSummary", () => {
   test("returns null on a non-200 response", async () => {
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      delay: noopDelay,
       fetchImpl: async () => new Response("nope", { status: 500 })
     });
 
@@ -47,6 +51,7 @@ describe("generateAiSummary", () => {
   test("returns null when fetch throws", async () => {
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      delay: noopDelay,
       fetchImpl: async () => {
         throw new Error("network down");
       }
@@ -58,9 +63,129 @@ describe("generateAiSummary", () => {
   test("returns null on an empty completion", async () => {
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      delay: noopDelay,
       fetchImpl: async () => okResponse("   ")
     });
 
     expect(result).toBeNull();
+  });
+
+  test("retries a 429 and succeeds on the second attempt", async () => {
+    let attempts = 0;
+    const result = await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      delay: noopDelay,
+      fetchImpl: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return new Response("rate limited", { status: 429 });
+        }
+        return okResponse("Recovered from rate limiting.");
+      }
+    });
+
+    expect(result).toBe("Recovered from rate limiting.");
+    expect(attempts).toBe(2);
+  });
+
+  test("honors a Retry-After header on a 429", async () => {
+    let attempts = 0;
+    const waitedMs: number[] = [];
+    const result = await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      delay: async (ms) => {
+        waitedMs.push(ms);
+      },
+      fetchImpl: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return new Response("rate limited", {
+            status: 429,
+            headers: { "retry-after": "3" }
+          });
+        }
+        return okResponse("Done.");
+      }
+    });
+
+    expect(result).toBe("Done.");
+    expect(waitedMs[0]).toBe(3000);
+  });
+
+  test("retries two 500s and succeeds on the third attempt", async () => {
+    let attempts = 0;
+    const result = await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      delay: noopDelay,
+      fetchImpl: async () => {
+        attempts += 1;
+        if (attempts < 3) {
+          return new Response("boom", { status: 500 });
+        }
+        return okResponse("Succeeded on the third try.");
+      }
+    });
+
+    expect(result).toBe("Succeeded on the third try.");
+    expect(attempts).toBe(3);
+  });
+
+  test("does not retry a permanent 400", async () => {
+    let attempts = 0;
+    const result = await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      delay: noopDelay,
+      fetchImpl: async () => {
+        attempts += 1;
+        return new Response("bad request", { status: 400 });
+      }
+    });
+
+    expect(result).toBeNull();
+    expect(attempts).toBe(1);
+  });
+
+  test("returns null after three consecutive 500s", async () => {
+    let attempts = 0;
+    const result = await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      delay: noopDelay,
+      fetchImpl: async () => {
+        attempts += 1;
+        return new Response("boom", { status: 500 });
+      }
+    });
+
+    expect(result).toBeNull();
+    expect(attempts).toBe(3);
+  });
+
+  test("retries an empty completion and returns the follow-up text", async () => {
+    let attempts = 0;
+    const result = await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      delay: noopDelay,
+      fetchImpl: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return okResponse("   ");
+        }
+        return okResponse("A proper summary.");
+      }
+    });
+
+    expect(result).toBe("A proper summary.");
+    expect(attempts).toBe(2);
+  });
+
+  test("increments the error metric exactly once when retries are exhausted", async () => {
+    resetMetricsForTests();
+    await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      delay: noopDelay,
+      fetchImpl: async () => new Response("boom", { status: 500 })
+    });
+
+    expect(getMetricsSnapshot().aiSummariesTotal.error).toBe(1);
   });
 });
