@@ -11,10 +11,7 @@ export const requestTimeoutMs = 12_000;
 const maxInputChars = 24_000;
 const maxSummaryChars = 3_000;
 const aiBodyMaxChars = 800;
-const minSummaryTokens = 150;
-const maxSummaryTokens = 500;
-const summaryBaseTokens = 80;
-const summaryTokensPerRepo = 60;
+const maxCompletionTokens = 1_000;
 export const maxAttempts = 3;
 const retryBackoffMs = [1_000, 2_000];
 const maxJitterMs = 250;
@@ -116,15 +113,6 @@ const parseRetryAfterMs = (response: Response): number | null => {
 export const isAiSummaryAvailable = (): boolean =>
   typeof env.OPENCODE_API_KEY === "string" && env.OPENCODE_API_KEY.length > 0;
 
-export const summaryTokenBudget = (events: StoredEvent[]): number => {
-  const repoCount = new Set(events.map((event) => event.repoName)).size;
-
-  return Math.min(
-    Math.max(summaryBaseTokens + summaryTokensPerRepo * repoCount, minSummaryTokens),
-    maxSummaryTokens
-  );
-};
-
 export const buildAiSummaryInput = (
   events: StoredEvent[],
   pullRequestDetails: Map<string, GitHubPullRequestDetail>
@@ -150,7 +138,12 @@ export const buildAiSummaryInput = (
   return sections.join("\n\n").slice(0, maxInputChars);
 };
 
-const extractCompletionText = (data: unknown): string | null => {
+type Completion = {
+  text: string;
+  finishReason: string | null;
+};
+
+const extractCompletion = (data: unknown): Completion | null => {
   if (typeof data !== "object" || data === null || !("choices" in data)) {
     return null;
   }
@@ -161,10 +154,21 @@ const extractCompletionText = (data: unknown): string | null => {
     return null;
   }
 
-  const first = choices[0] as { message?: { content?: unknown } };
+  const first = choices[0] as {
+    finish_reason?: unknown;
+    message?: { content?: unknown };
+  };
   const content = first.message?.content;
 
-  return typeof content === "string" ? content : null;
+  if (typeof content !== "string") {
+    return null;
+  }
+
+  return {
+    text: content,
+    finishReason:
+      typeof first.finish_reason === "string" ? first.finish_reason : null
+  };
 };
 
 export const generateAiSummary = async (
@@ -180,7 +184,6 @@ export const generateAiSummary = async (
   const fetchImpl = options.fetchImpl ?? fetch;
   const delay = options.delay ?? sleep;
   const input = buildAiSummaryInput(events, options.pullRequestDetails ?? new Map());
-  const maxTokens = summaryTokenBudget(events);
 
   const startedAt = Date.now();
   let attempts = 0;
@@ -202,8 +205,10 @@ export const generateAiSummary = async (
             { role: "system", content: systemPrompt },
             { role: "user", content: input }
           ],
+          // Hidden reasoning consumes the completion budget before the digest text.
+          thinking: { type: "disabled" },
           temperature: 0.2,
-          max_tokens: maxTokens
+          max_tokens: maxCompletionTokens
         }),
         signal: AbortSignal.timeout(requestTimeoutMs)
       });
@@ -243,7 +248,22 @@ export const generateAiSummary = async (
         return null;
       }
 
-      const text = extractCompletionText(await response.json())?.trim() ?? "";
+      const completion = extractCompletion(await response.json());
+      const text = completion?.text.trim() ?? "";
+
+      if (completion !== null && completion.finishReason !== "stop") {
+        logger.warn(
+          {
+            finish_reason: completion.finishReason,
+            content_length: text.length,
+            event_count: events.length
+          },
+          "ai summary response was incomplete"
+        );
+        incrementAiSummary("error");
+
+        return null;
+      }
 
       if (text.length === 0) {
         const retryDelayMs = retryDelayFor(attempts, null, startedAt);

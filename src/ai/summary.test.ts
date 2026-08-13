@@ -7,7 +7,6 @@ import {
   generateAiSummary,
   maxAttempts,
   requestTimeoutMs,
-  summaryTokenBudget,
   totalBudgetMs
 } from "~/ai/summary";
 import { summarizeEvent } from "~/formatting/summarize";
@@ -19,9 +18,11 @@ import {
   releaseEvent
 } from "~/test/fixtures/github-events";
 
-const okResponse = (content: string): Response =>
+const okResponse = (content: string, finishReason = "stop"): Response =>
   new Response(
-    JSON.stringify({ choices: [{ message: { content } }] }),
+    JSON.stringify({
+      choices: [{ finish_reason: finishReason, message: { content } }]
+    }),
     { status: 200, headers: { "content-type": "application/json" } }
   );
 
@@ -112,7 +113,7 @@ describe("generateAiSummary", () => {
     expect(requestBody).toContain("deepseek-v4-flash");
   });
 
-  test("sends the scaled token budget and temperature", async () => {
+  test("disables thinking and allows enough visible output", async () => {
     let requestBody = "";
     await generateAiSummary(eventsForRepos(3), {
       apiKey: "test-key",
@@ -123,8 +124,23 @@ describe("generateAiSummary", () => {
     });
 
     const body = JSON.parse(requestBody);
-    expect(body.max_tokens).toBe(260);
+    expect(body.thinking).toEqual({ type: "disabled" });
+    expect(body.max_tokens).toBe(1000);
     expect(body.temperature).toBe(0.2);
+  });
+
+  test("rejects a length-limited response instead of sending its fragment", async () => {
+    let attempts = 0;
+    const result = await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      fetchImpl: async () => {
+        attempts += 1;
+        return okResponse("octocat/hello-w", "length");
+      }
+    });
+
+    expect(result).toBeNull();
+    expect(attempts).toBe(1);
   });
 
   test("system prompt states the conciseness rules and examples", async () => {
@@ -298,21 +314,6 @@ describe("generateAiSummary", () => {
     });
 
     expect(getMetricsSnapshot().aiSummariesTotal.error).toBe(1);
-  });
-});
-
-describe("summaryTokenBudget", () => {
-  test("scales with the number of distinct repositories", () => {
-    // Both fixtures share one repo name, so these sit on the floor.
-    expect(summaryTokenBudget([pushEvent])).toBe(150);
-    expect(summaryTokenBudget([pushEvent, releaseEvent])).toBe(150);
-    expect(summaryTokenBudget(eventsForRepos(3))).toBe(260);
-    expect(summaryTokenBudget(eventsForRepos(5))).toBe(380);
-  });
-
-  test("stays within the floor and the cap", () => {
-    expect(summaryTokenBudget([])).toBe(150);
-    expect(summaryTokenBudget(eventsForRepos(20))).toBe(500);
   });
 });
 
