@@ -365,7 +365,7 @@ const executeDeliveryTask = async (
       if (summaryText === null) {
         taskLogger.warn("ai summary unavailable, falling back to standard digest");
       } else {
-        messages = [renderAiDigest(summaryText, matchingEvents)];
+        messages = renderAiDigest(summaryText, matchingEvents);
       }
     } catch (error) {
       taskLogger.warn({ err: error }, "ai summary threw, falling back to standard digest");
