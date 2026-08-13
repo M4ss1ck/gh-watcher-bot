@@ -10,19 +10,37 @@ const model = "deepseek-v4-flash";
 export const requestTimeoutMs = 12_000;
 const maxInputChars = 24_000;
 const maxSummaryChars = 3_000;
+const minSummaryTokens = 100;
+const maxSummaryTokens = 400;
+const summaryBaseTokens = 60;
+const summaryTokensPerRepo = 40;
 export const maxAttempts = 3;
 const retryBackoffMs = [1_000, 2_000];
 const maxJitterMs = 250;
 const maxRetryAfterMs = 5_000;
 export const totalBudgetMs = 40_000;
 
-const systemPrompt = [
-  "You summarize GitHub activity for a Telegram digest bot.",
-  "Write plain text only: no markdown, no HTML, no headings, no bullet points.",
-  "Summarize the activity below in one or two short paragraphs, at most 1500 characters.",
-  "Mention repository names and the most notable changes first.",
-  "Do not invent details that are not present in the input."
-].join(" ");
+const systemPrompt = `You summarize GitHub activity for a Telegram digest bot.
+
+Rules:
+- Plain text only. No markdown, no HTML, no headings, no bullet points.
+- Write ONE sentence per repository. Never more than 4 sentences in total.
+- If there is only one event, write ONE short sentence and stop.
+- Start each sentence with the repository name.
+- Use active voice and always name the person who did it. Never write "a branch was created" without saying who created it.
+- State only what happened. Never explain why it matters, what it indicates, what it means, or what is most notable.
+- Never write a closing, completion, or summarising sentence.
+- Collapse a chain of related events into its end state. A branch created, then a pull request opened from it, then that pull request merged, is ONE fact: the merge. Do not narrate the sequence that led there.
+- Do not restate the same fact at different levels of detail.
+- Banned phrasings, including anything similar: "saw activity", "the most notable", "this indicates", "which means", "overall", "in summary", "notably", "completing the change", "subsequently", "followed by".
+- Do not invent anything absent from the input.
+
+Examples:
+bad: M4ss1ck/maibuk saw activity around a new branch and pull request. M4ss1ck created the branch M4ss1ck/projects-archive-books, then opened and later merged pull request #143, which brings that branch into the main branch. The merge is the most notable change, indicating the projects-archive-books work is now part of the main codebase.
+good: M4ss1ck/maibuk: M4ss1ck merged PR #143 (projects-archive-books) into main.
+
+bad: In M4ss1ck/maibuk, a new branch M4ss1ck/better-canvas was created, followed by pull request #142 from that branch into main. The pull request was subsequently opened and then merged, completing the change.
+good: M4ss1ck/maibuk: M4ss1ck merged PR #142 (better-canvas) into main.`;
 
 type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
 type DelayFn = (ms: number) => Promise<void>;
@@ -88,6 +106,15 @@ const parseRetryAfterMs = (response: Response): number | null => {
 export const isAiSummaryAvailable = (): boolean =>
   typeof env.OPENCODE_API_KEY === "string" && env.OPENCODE_API_KEY.length > 0;
 
+export const summaryTokenBudget = (events: StoredEvent[]): number => {
+  const repoCount = new Set(events.map((event) => event.repoName)).size;
+
+  return Math.min(
+    Math.max(summaryBaseTokens + summaryTokensPerRepo * repoCount, minSummaryTokens),
+    maxSummaryTokens
+  );
+};
+
 export const buildAiSummaryInput = (
   events: StoredEvent[],
   pullRequestDetails: Map<string, GitHubPullRequestDetail>
@@ -142,6 +169,7 @@ export const generateAiSummary = async (
   const fetchImpl = options.fetchImpl ?? fetch;
   const delay = options.delay ?? sleep;
   const input = buildAiSummaryInput(events, options.pullRequestDetails ?? new Map());
+  const maxTokens = summaryTokenBudget(events);
 
   const startedAt = Date.now();
   let attempts = 0;
@@ -163,8 +191,8 @@ export const generateAiSummary = async (
             { role: "system", content: systemPrompt },
             { role: "user", content: input }
           ],
-          temperature: 0.3,
-          max_tokens: 1_000
+          temperature: 0.2,
+          max_tokens: maxTokens
         }),
         signal: AbortSignal.timeout(requestTimeoutMs)
       });

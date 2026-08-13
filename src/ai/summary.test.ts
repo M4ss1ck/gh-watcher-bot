@@ -7,9 +7,11 @@ import {
   generateAiSummary,
   maxAttempts,
   requestTimeoutMs,
+  summaryTokenBudget,
   totalBudgetMs
 } from "~/ai/summary";
 import { getMetricsSnapshot, resetMetricsForTests } from "~/lib/metrics";
+import type { StoredEvent } from "~/github/types";
 import { pushEvent, releaseEvent } from "~/test/fixtures/github-events";
 
 const okResponse = (content: string): Response =>
@@ -17,6 +19,17 @@ const okResponse = (content: string): Response =>
     JSON.stringify({ choices: [{ message: { content } }] }),
     { status: 200, headers: { "content-type": "application/json" } }
   );
+
+const eventsForRepos = (count: number): StoredEvent[] =>
+  Array.from({ length: count }, (_, index) => ({
+    id: `repo-event-${index}`,
+    accountId: 1,
+    type: "PushEvent",
+    repoName: `owner/repo-${index}`,
+    actorLogin: "octocat",
+    payload: {},
+    createdAt: new Date("2026-01-01T00:00:00Z")
+  }));
 
 describe("buildAiSummaryInput", () => {
   test("groups event lines by repository", () => {
@@ -43,6 +56,40 @@ describe("generateAiSummary", () => {
 
     expect(result).toBe("A quiet day with one push.");
     expect(requestBody).toContain("deepseek-v4-flash");
+  });
+
+  test("sends the scaled token budget and temperature", async () => {
+    let requestBody = "";
+    await generateAiSummary(eventsForRepos(3), {
+      apiKey: "test-key",
+      fetchImpl: async (_url, init) => {
+        requestBody = String(init?.body);
+        return okResponse("Fine.");
+      }
+    });
+
+    const body = JSON.parse(requestBody);
+    expect(body.max_tokens).toBe(180);
+    expect(body.temperature).toBe(0.2);
+  });
+
+  test("system prompt states the conciseness rules and examples", async () => {
+    let requestBody = "";
+    await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      fetchImpl: async (_url, init) => {
+        requestBody = String(init?.body);
+        return okResponse("Fine.");
+      }
+    });
+
+    const body = JSON.parse(requestBody);
+    const systemPrompt = body.messages[0].content;
+
+    expect(systemPrompt).toContain("Write ONE sentence per repository");
+    expect(systemPrompt).toContain("Never more than 4 sentences in total");
+    expect(systemPrompt).toContain("completing the change");
+    expect(systemPrompt).toContain("M4ss1ck merged PR #143");
   });
 
   test("returns null on a non-200 response", async () => {
@@ -194,6 +241,19 @@ describe("generateAiSummary", () => {
     });
 
     expect(getMetricsSnapshot().aiSummariesTotal.error).toBe(1);
+  });
+});
+
+describe("summaryTokenBudget", () => {
+  test("scales with the number of distinct repositories", () => {
+    expect(summaryTokenBudget([pushEvent])).toBe(100);
+    expect(summaryTokenBudget([pushEvent, releaseEvent])).toBe(100);
+    expect(summaryTokenBudget(eventsForRepos(3))).toBe(180);
+  });
+
+  test("stays within the floor and the cap", () => {
+    expect(summaryTokenBudget([])).toBe(100);
+    expect(summaryTokenBudget(eventsForRepos(20))).toBe(400);
   });
 });
 
