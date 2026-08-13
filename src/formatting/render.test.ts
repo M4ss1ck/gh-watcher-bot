@@ -140,12 +140,72 @@ describe("renderEventDigest", () => {
 
 describe("renderAiDigest", () => {
   test("escapes the summary and links each repository", () => {
-    const message = renderAiDigest("Shipped <v2> & more", [pushEvent]);
+    const [message] = renderAiDigest("Shipped <v2> & more", [pushEvent]);
 
     expect(message).toContain("<b>GitHub activity digest</b>");
     expect(message).toContain("Shipped &lt;v2&gt; &amp; more");
     expect(message).toContain(`https://github.com/${pushEvent.repoName}`);
     expect(message).not.toContain("<v2>");
+  });
+
+  test("returns exactly one message for a short summary", () => {
+    const messages = renderAiDigest("Shipped <v2> & more", [pushEvent]);
+
+    expect(messages).toEqual([
+      [
+        "<b>GitHub activity digest</b> · AI summary",
+        "",
+        "Shipped &lt;v2&gt; &amp; more",
+        "",
+        `<a href="https://github.com/octocat/hello-world">octocat/hello-world</a>`
+      ].join("\n")
+    ]);
+  });
+
+  test("splits a long summary across messages within the budget", () => {
+    const longSummary = Array.from(
+      { length: 30 },
+      (_, index) => `Line ${index}: some text here`
+    ).join("\n");
+    const messages = renderAiDigest(longSummary, [pushEvent], { maxMessageLength: 100 });
+
+    expect(messages.length).toBeGreaterThan(1);
+    expect(messages.every((message) => message.length <= 100)).toBe(true);
+  });
+
+  test("puts the header only on the first message", () => {
+    const messages = renderAiDigest("line\n".repeat(50), [pushEvent], { maxMessageLength: 100 });
+
+    expect(messages[0]).toContain("<b>GitHub activity digest</b>");
+    expect(messages.slice(1).every((message) => !message.includes("GitHub activity digest"))).toBe(
+      true
+    );
+  });
+
+  test("puts the repo link line only on the last message", () => {
+    const messages = renderAiDigest("line\n".repeat(50), [pushEvent], { maxMessageLength: 100 });
+
+    expect(messages[messages.length - 1]).toContain("https://github.com/octocat/hello-world");
+    expect(
+      messages.slice(0, -1).every((message) => !message.includes("github.com/octocat/hello-world"))
+    ).toBe(true);
+  });
+
+  test("hard-splits a single line longer than the budget", () => {
+    const messages = renderAiDigest("word ".repeat(30), [pushEvent], { maxMessageLength: 80 });
+
+    expect(messages.length).toBeGreaterThan(1);
+    expect(messages.every((message) => message.length <= 80)).toBe(true);
+  });
+
+  test("never splits inside an escaped entity", () => {
+    const messages = renderAiDigest(`${"x".repeat(17)}&amp;y`, [pushEvent], {
+      maxMessageLength: 20
+    });
+
+    expect(
+      messages.every((message) => message.includes("&amp;") || !message.includes("&"))
+    ).toBe(true);
   });
 });
 

@@ -146,10 +146,47 @@ export const renderEventDigest = (
 
 const maxLinkedRepos = 6;
 
+const isSafeCut = (line: string, cut: number): boolean => {
+  const before = line.slice(0, cut);
+  const lastLt = before.lastIndexOf("<");
+  const lastGt = before.lastIndexOf(">");
+  const lastAmp = before.lastIndexOf("&");
+  const lastSemi = before.lastIndexOf(";");
+
+  return lastLt <= lastGt && lastAmp <= lastSemi;
+};
+
+const splitLongLine = (line: string, maxLength: number): string[] => {
+  const pieces: string[] = [];
+  let start = 0;
+
+  while (line.length - start > maxLength) {
+    const ideal = start + maxLength;
+    let cut = ideal;
+
+    while (cut > start && !isSafeCut(line, cut)) {
+      cut -= 1;
+    }
+
+    if (cut === start) {
+      cut = ideal;
+    }
+
+    pieces.push(line.slice(start, cut));
+    start = cut;
+  }
+
+  pieces.push(line.slice(start));
+
+  return pieces;
+};
+
 export const renderAiDigest = (
   summaryText: string,
-  events: StoredEvent[]
-): string => {
+  events: StoredEvent[],
+  options: RenderOptions = {}
+): string[] => {
+  const maxMessageLength = options.maxMessageLength ?? defaultMaxMessageLength;
   const repoNames = [...new Set(events.map((event) => event.repoName))];
   const shown = repoNames.slice(0, maxLinkedRepos);
   const overflow = repoNames.length - shown.length;
@@ -161,11 +198,43 @@ export const renderAiDigest = (
     .join(" · ");
   const linkLine = overflow > 0 ? `${links} · +${overflow} more` : links;
 
-  return [
-    "<b>GitHub activity digest</b> · AI summary",
-    "",
-    escapeHtml(summaryText),
-    "",
-    linkLine
-  ].join("\n");
+  const header = "<b>GitHub activity digest</b> · AI summary";
+  const summaryLines = escapeHtml(summaryText).split("\n");
+  const messages: string[] = [];
+  let current = header;
+  let firstLine = true;
+
+  const appendLine = (line: string): void => {
+    const gap = firstLine ? "\n\n" : "\n";
+
+    if (current.length + gap.length + line.length <= maxMessageLength) {
+      current = `${current}${gap}${line}`;
+    } else {
+      messages.push(current);
+      current = line;
+    }
+
+    firstLine = false;
+  };
+
+  for (const line of summaryLines) {
+    if (line.length > maxMessageLength) {
+      for (const piece of splitLongLine(line, maxMessageLength)) {
+        appendLine(piece);
+      }
+    } else {
+      appendLine(line);
+    }
+  }
+
+  if (current.length + 2 + linkLine.length <= maxMessageLength) {
+    current = `${current}\n\n${linkLine}`;
+  } else {
+    messages.push(current);
+    current = linkLine;
+  }
+
+  messages.push(current);
+
+  return messages;
 };

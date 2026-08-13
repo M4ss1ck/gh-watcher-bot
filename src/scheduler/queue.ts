@@ -18,7 +18,11 @@ export const createDeliveryQueue = (
 ): DeliveryQueue => {
   const queue = new PQueue({
     concurrency: options.concurrency ?? 3,
-    timeout: 60_000
+    // Must sit above every internal deadline (the 40s AI summary budget,
+    // octokit retry/throttle waits, grammY auto-retry) so it only trips on a
+    // genuine hang. p-queue cannot cancel the underlying delivery: on expiry
+    // the tracking promise rejects while the work keeps running.
+    timeout: 180_000
   });
 
   return {

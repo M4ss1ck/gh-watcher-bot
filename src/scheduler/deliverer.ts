@@ -365,7 +365,7 @@ const executeDeliveryTask = async (
       if (summaryText === null) {
         taskLogger.warn("ai summary unavailable, falling back to standard digest");
       } else {
-        messages = [renderAiDigest(summaryText, matchingEvents)];
+        messages = renderAiDigest(summaryText, matchingEvents);
       }
     } catch (error) {
       taskLogger.warn({ err: error }, "ai summary threw, falling back to standard digest");
@@ -508,7 +508,7 @@ export const startDeliverer = (options: StartDelivererOptions): Deliverer => {
         void queue.addDelivery({ subscriptionId: item.id }).catch((error) => {
           logger.error(
             { err: error, subscription_id: item.id },
-            "delivery queue task failed"
+            "delivery exceeded the queue budget and may still complete"
           );
         });
       }
@@ -534,7 +534,7 @@ export const startDeliverer = (options: StartDelivererOptions): Deliverer => {
         void queue.addDelivery({ subscriptionId: item.id }).catch((error) => {
           logger.error(
             { err: error, subscription_id: item.id },
-            "delivery queue task failed"
+            "delivery exceeded the queue budget and may still complete"
           );
         });
       }

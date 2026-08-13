@@ -30,9 +30,11 @@ Telegram bot that watches public GitHub accounts and delivers activity digests o
    | ADMIN_IDS | yes | Comma-separated Telegram user IDs with admin access |
    | DATABASE_URL | yes | file:./data/dev.db locally, libsql://... for Turso |
    | DATABASE_AUTH_TOKEN | with libsql:// | Turso auth token |
-   | GITHUB_TOKEN | no | Raises GitHub rate limits (public data only) |
+   | GITHUB_TOKEN | no | Raises GitHub rate limits from 60/hour to 5000/hour (public data only) |
    | OPENCODE_API_KEY | no | Enables the per-subscription AI summary toggle |
    | LOG_LEVEL, NODE_ENV, POLL_INTERVAL_CRON, MAX_SUBS_PER_CHAT, REPO_POLL_THRESHOLD | no | See .env.example defaults |
+
+   Without a token, GitHub allows 60 requests/hour per IP. With one, 5000/hour. A classic PAT with no scopes selected is enough: the bot reads only public data, and an unscoped token still gets the full authenticated limit. Conditional requests that come back 304 still count against the quota, so ETag caching saves bandwidth, not rate limit. The cost scales: when a subscription selects at or under REPO_POLL_THRESHOLD repos, the collector polls each repo separately every tick (src/scheduler/collector.ts:155-167), so one subscription watching 5 repos costs 5 requests per tick instead of 1.
 
 2. Run it:
 
