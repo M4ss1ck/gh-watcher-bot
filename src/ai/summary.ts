@@ -1,12 +1,16 @@
-// Generates prose digest summaries through the opencode Go chat completions API.
+// Generates prose digest summaries through the cheapest working opencode Go model.
+import {
+  createModelSelector,
+  loadRankedModels,
+  type ModelSelector
+} from "~/ai/models";
+import { buildApiRequest, parseCompletion, type SummaryModel } from "~/ai/protocols";
 import type { GitHubPullRequestDetail, StoredEvent } from "~/github/types";
 import { summarizeEvent } from "~/formatting/summarize";
 import { env } from "~/lib/env";
 import { logger } from "~/lib/logger";
 import { incrementAiSummary } from "~/lib/metrics";
 
-const apiUrl = "https://opencode.ai/zen/go/v1/chat/completions";
-const model = "deepseek-v4-flash";
 // opencode Go asks clients to identify themselves and send one stable session ID per conversation.
 const userAgent = "gh-watcher-bot/1.0";
 export const requestTimeoutMs = 12_000;
@@ -59,6 +63,7 @@ export type GenerateAiSummaryOptions = {
   fetchImpl?: FetchImpl;
   apiKey?: string;
   delay?: DelayFn;
+  modelSelector?: Pick<ModelSelector, "getModel" | "reportFailure">;
 };
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -140,38 +145,82 @@ export const buildAiSummaryInput = (
   return sections.join("\n\n").slice(0, maxInputChars);
 };
 
-type Completion = {
-  text: string;
-  finishReason: string | null;
+// A small digest with a pull request description, so a probe exercises the same prompt,
+// parameters, and reasoning cost as a real delivery.
+const probeInput = `octocat/hello-world:
+- octocat merged pull request #7: Add retry budget (retry-budget -> main) (+120 -14 across 3 files; 2 commits; Caps total retry time for outbound API calls at 40 seconds and clamps each backoff so the last attempt still fits.)
+- octocat published release v1.4.0: v1.4.0`;
+
+const summaryRequest = (input: string) => ({
+  system: systemPrompt,
+  input,
+  maxOutputTokens: maxCompletionTokens,
+  temperature: 0.2
+});
+
+const sendSummaryRequest = (
+  fetchImpl: FetchImpl,
+  model: SummaryModel,
+  input: string,
+  apiKey: string,
+  sessionId: string
+): Promise<Response> => {
+  const request = buildApiRequest(model, summaryRequest(input), { apiKey, sessionId, userAgent });
+
+  return fetchImpl(request.url, {
+    method: "POST",
+    headers: request.headers,
+    body: request.body,
+    signal: AbortSignal.timeout(requestTimeoutMs)
+  });
 };
 
-const extractCompletion = (data: unknown): Completion | null => {
-  if (typeof data !== "object" || data === null || !("choices" in data)) {
-    return null;
+export const probeSummaryModel = async (
+  model: SummaryModel,
+  options: { fetchImpl: FetchImpl; apiKey: string }
+): Promise<boolean> => {
+  try {
+    const response = await sendSummaryRequest(
+      options.fetchImpl,
+      model,
+      probeInput,
+      options.apiKey,
+      crypto.randomUUID()
+    );
+    const completion = response.ok
+      ? parseCompletion(model.protocol, await response.json())
+      : null;
+    const passed = completion !== null && completion.complete && completion.text.trim().length > 0;
+
+    logger.debug(
+      { model: model.id, status: response.status, stop_reason: completion?.stopReason, passed },
+      "ai summary model probed"
+    );
+
+    return passed;
+  } catch (error) {
+    logger.debug({ model: model.id, err: error }, "ai summary model probe errored");
+
+    return false;
   }
-
-  const choices = (data as { choices: unknown }).choices;
-
-  if (!Array.isArray(choices) || choices.length === 0) {
-    return null;
-  }
-
-  const first = choices[0] as {
-    finish_reason?: unknown;
-    message?: { content?: unknown };
-  };
-  const content = first.message?.content;
-
-  if (typeof content !== "string") {
-    return null;
-  }
-
-  return {
-    text: content,
-    finishReason:
-      typeof first.finish_reason === "string" ? first.finish_reason : null
-  };
 };
+
+let defaultModelSelector: ModelSelector | null = null;
+
+export const getSummaryModelSelector = (): ModelSelector => {
+  defaultModelSelector ??= createModelSelector({
+    loadModels: () => loadRankedModels({ fetchImpl: fetch, apiKey: env.OPENCODE_API_KEY ?? "" }),
+    probe: (model) => probeSummaryModel(model, { fetchImpl: fetch, apiKey: env.OPENCODE_API_KEY ?? "" })
+  });
+
+  return defaultModelSelector;
+};
+
+// 401/402/403 point at the API key or billing and 429 at load, not at the model.
+const accountLevelStatuses = new Set([401, 402, 403, 429]);
+
+const isModelRejection = (status: number): boolean =>
+  status >= 400 && status < 500 && !accountLevelStatuses.has(status);
 
 export const generateAiSummary = async (
   events: StoredEvent[],
@@ -185,9 +234,12 @@ export const generateAiSummary = async (
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const delay = options.delay ?? sleep;
+  const modelSelector = options.modelSelector ?? getSummaryModelSelector();
   const input = buildAiSummaryInput(events, options.pullRequestDetails ?? new Map());
   // One digest is one conversation, so retries reuse the ID and the next digest gets a new one.
   const sessionId = crypto.randomUUID();
+  // Selection can probe models once a day; that wait does not count against the retry budget.
+  const model = await modelSelector.getModel();
 
   const startedAt = Date.now();
   let attempts = 0;
@@ -197,27 +249,7 @@ export const generateAiSummary = async (
     attempts += 1;
 
     try {
-      const response = await fetchImpl(apiUrl, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
-          "user-agent": userAgent,
-          "x-opencode-session": sessionId
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: input }
-          ],
-          // Hidden reasoning consumes the completion budget before the digest text.
-          thinking: { type: "disabled" },
-          temperature: 0.2,
-          max_tokens: maxCompletionTokens
-        }),
-        signal: AbortSignal.timeout(requestTimeoutMs)
-      });
+      const response = await sendSummaryRequest(fetchImpl, model, input, apiKey, sessionId);
 
       lastStatus = response.status;
 
@@ -226,7 +258,7 @@ export const generateAiSummary = async (
 
         if (retryDelayMs === null) {
           logger.warn(
-            { status: response.status, attempts, event_count: events.length },
+            { model: model.id, status: response.status, attempts, event_count: events.length },
             "ai summary request failed"
           );
           incrementAiSummary("error");
@@ -235,7 +267,7 @@ export const generateAiSummary = async (
         }
 
         logger.debug(
-          { attempt: attempts, status: response.status },
+          { model: model.id, attempt: attempts, status: response.status },
           "ai summary request failed, retrying"
         );
 
@@ -246,26 +278,33 @@ export const generateAiSummary = async (
 
       if (!response.ok) {
         logger.warn(
-          { status: response.status, event_count: events.length },
+          { model: model.id, status: response.status, event_count: events.length },
           "ai summary request failed"
         );
+
+        if (isModelRejection(response.status)) {
+          modelSelector.reportFailure(model.id);
+        }
+
         incrementAiSummary("error");
 
         return null;
       }
 
-      const completion = extractCompletion(await response.json());
+      const completion = parseCompletion(model.protocol, await response.json());
       const text = completion?.text.trim() ?? "";
 
-      if (completion !== null && completion.finishReason !== "stop") {
+      if (completion !== null && !completion.complete) {
         logger.warn(
           {
-            finish_reason: completion.finishReason,
+            model: model.id,
+            stop_reason: completion.stopReason,
             content_length: text.length,
             event_count: events.length
           },
           "ai summary response was incomplete"
         );
+        modelSelector.reportFailure(model.id);
         incrementAiSummary("error");
 
         return null;
@@ -275,13 +314,20 @@ export const generateAiSummary = async (
         const retryDelayMs = retryDelayFor(attempts, null, startedAt);
 
         if (retryDelayMs === null) {
-          logger.warn({ attempts, event_count: events.length }, "ai summary response was empty");
+          logger.warn(
+            { model: model.id, attempts, event_count: events.length },
+            "ai summary response was empty"
+          );
+          modelSelector.reportFailure(model.id);
           incrementAiSummary("error");
 
           return null;
         }
 
-        logger.debug({ attempt: attempts }, "ai summary response was empty, retrying");
+        logger.debug(
+          { model: model.id, attempt: attempts },
+          "ai summary response was empty, retrying"
+        );
 
         await delay(retryDelayMs);
 
@@ -298,7 +344,13 @@ export const generateAiSummary = async (
 
       if (retryDelayMs === null) {
         logger.warn(
-          { err: error, attempts, last_status: lastStatus, event_count: events.length },
+          {
+            err: error,
+            model: model.id,
+            attempts,
+            last_status: lastStatus,
+            event_count: events.length
+          },
           "ai summary request errored"
         );
         incrementAiSummary("error");

@@ -2,6 +2,8 @@
 import { Menu, MenuRange } from "@grammyjs/menu";
 import type { Bot, Context, NextFunction } from "grammy";
 
+import type { ModelSelection } from "~/ai/models";
+import { getSummaryModelSelector, isAiSummaryAvailable } from "~/ai/summary";
 import {
   adminAccountsMenuId,
   adminBroadcastConfirmMenuId,
@@ -34,6 +36,8 @@ export type AdminDiagnosticsInput = {
   activeChats: number;
   eventsIngestedLast24h: number;
   errorsLast24h: number;
+  // null while the AI summary feature is off; a string describes the current model pick.
+  aiModel?: string | null;
   metrics?: Pick<
     MetricsSnapshot,
     "githubApiRequestsTotal" | "deliveriesSentTotal" | "telegramApiErrorsTotal" | "aiSummariesTotal"
@@ -86,6 +90,19 @@ export const buildBroadcastConfirmationText = (
   return `Broadcast to ${activeChatCount} active chats?\n\n${preview}`;
 };
 
+export const formatAiModelSelection = (selection: ModelSelection | null): string => {
+  if (selection === null) {
+    return "not selected yet";
+  }
+
+  const cost =
+    selection.costPerDigestUsd === null
+      ? ""
+      : ` ~$${selection.costPerDigestUsd.toFixed(5)}/digest`;
+
+  return `${selection.model.id} (${selection.reason})${cost}`;
+};
+
 export const buildAdminDiagnosticsMessage = (
   input: AdminDiagnosticsInput
 ): string => {
@@ -115,6 +132,7 @@ export const buildAdminDiagnosticsMessage = (
     aiSummaries === undefined
       ? null
       : `AI summaries: ok=${aiSummaries.ok}, error=${aiSummaries.error}`,
+    input.aiModel === undefined || input.aiModel === null ? null : `AI model: ${input.aiModel}`,
     telegramErrors === undefined
       ? null
       : `Telegram API errors: ${telegramErrorCount}`
@@ -269,6 +287,9 @@ export const loadAdminDiagnosticsInput = async (): Promise<AdminDiagnosticsInput
     activeChats: counts.activeChats,
     eventsIngestedLast24h: counts.eventsIngestedLast24h,
     errorsLast24h,
+    aiModel: isAiSummaryAvailable()
+      ? formatAiModelSelection(getSummaryModelSelector().currentSelection())
+      : null,
     metrics
   };
 };

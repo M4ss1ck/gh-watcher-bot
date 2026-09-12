@@ -1,4 +1,5 @@
 // Starts the bot process and waits for a shutdown signal.
+import { getSummaryModelSelector, isAiSummaryAvailable } from "~/ai/summary";
 import { createBot, publishBotCommands } from "~/bot";
 import { setDeliverer, setGitHubClient } from "~/bot/menus/deps";
 import { libsqlClient } from "~/db/client";
@@ -15,6 +16,11 @@ const main = async (): Promise<void> => {
   logger.info("starting");
 
   await runMigrations();
+
+  if (isAiSummaryAvailable()) {
+    // Pick the summary model at boot so the first AI digest does not wait on the probes.
+    void getSummaryModelSelector().getModel();
+  }
 
   const githubClient = createGitHubClient();
   setGitHubClient(githubClient);
