@@ -127,7 +127,7 @@ No `delivery_log` table — cursor is the source of truth.
   3. Query events for `accountId` newer than `lastDeliveredAt` (or all if null).
   4. Apply filters (`/filters/apply.ts`).
   5. If 0 events pass: do not send anything. Advance cursor to `now`. Log at debug.
-  6. If >0: render with `/formatting/render.ts`. If the subscription has `aiSummary` on and `OPENCODE_API_KEY` is set, ask `/src/ai/summary.ts` for a prose summary (opencode Go, `deepseek-v4-flash`, 30s timeout) and send it as a single message rendered by `renderAiDigest`; on any AI failure fall back to the standard digest. Send to chat. On success, advance cursor to the newest event's `createdAt`.
+  6. If >0: render with `/formatting/render.ts`. If the subscription has `aiSummary` on and `OPENCODE_API_KEY` is set, ask `/src/ai/summary.ts` for a prose summary (opencode Go, `deepseek-v4-flash`, 30s timeout; every request sends `user-agent: gh-watcher-bot/1.0` and an `x-opencode-session` UUID that is shared by retries of one digest and new for each digest, as opencode Go requires) and send it as a single message rendered by `renderAiDigest`; on any AI failure fall back to the standard digest. Send to chat. On success, advance cursor to the newest event's `createdAt`.
   7. On Telegram send failure: log error, do NOT advance cursor. The next scheduled run will retry.
 - Write a heartbeat (`key="deliverer.last_tick"`) after each delivery task settles (success or failure).
 

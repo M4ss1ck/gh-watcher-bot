@@ -113,6 +113,41 @@ describe("generateAiSummary", () => {
     expect(requestBody).toContain("deepseek-v4-flash");
   });
 
+  test("sends the opencode session header and a client user agent", async () => {
+    let headers = new Headers();
+    await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      fetchImpl: async (_url, init) => {
+        headers = new Headers(init?.headers);
+        return okResponse("Fine.");
+      }
+    });
+
+    expect(headers.get("x-opencode-session")).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
+    expect(headers.get("user-agent")).toBe("gh-watcher-bot/1.0");
+    expect(headers.get("authorization")).toBe("Bearer test-key");
+  });
+
+  test("reuses the session ID across retries and not across digests", async () => {
+    const sessionIds: (string | null)[] = [];
+    let attempts = 0;
+    const fetchImpl = async (_url: string, init?: RequestInit): Promise<Response> => {
+      sessionIds.push(new Headers(init?.headers).get("x-opencode-session"));
+      attempts += 1;
+      return attempts === 1 ? new Response("boom", { status: 500 }) : okResponse("Fine.");
+    };
+
+    await generateAiSummary([pushEvent], { apiKey: "test-key", delay: noopDelay, fetchImpl });
+    await generateAiSummary([pushEvent], { apiKey: "test-key", delay: noopDelay, fetchImpl });
+
+    expect(sessionIds).toHaveLength(3);
+    expect(sessionIds[0]).not.toBeNull();
+    expect(sessionIds[1]).toBe(sessionIds[0]);
+    expect(sessionIds[2]).not.toBe(sessionIds[0]);
+  });
+
   test("disables thinking and allows enough visible output", async () => {
     let requestBody = "";
     await generateAiSummary(eventsForRepos(3), {
