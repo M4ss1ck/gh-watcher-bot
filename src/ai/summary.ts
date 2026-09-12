@@ -7,6 +7,8 @@ import { incrementAiSummary } from "~/lib/metrics";
 
 const apiUrl = "https://opencode.ai/zen/go/v1/chat/completions";
 const model = "deepseek-v4-flash";
+// opencode Go asks clients to identify themselves and send one stable session ID per conversation.
+const userAgent = "gh-watcher-bot/1.0";
 export const requestTimeoutMs = 12_000;
 const maxInputChars = 24_000;
 const maxSummaryChars = 3_000;
@@ -184,6 +186,8 @@ export const generateAiSummary = async (
   const fetchImpl = options.fetchImpl ?? fetch;
   const delay = options.delay ?? sleep;
   const input = buildAiSummaryInput(events, options.pullRequestDetails ?? new Map());
+  // One digest is one conversation, so retries reuse the ID and the next digest gets a new one.
+  const sessionId = crypto.randomUUID();
 
   const startedAt = Date.now();
   let attempts = 0;
@@ -197,7 +201,9 @@ export const generateAiSummary = async (
         method: "POST",
         headers: {
           authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "user-agent": userAgent,
+          "x-opencode-session": sessionId
         },
         body: JSON.stringify({
           model,
