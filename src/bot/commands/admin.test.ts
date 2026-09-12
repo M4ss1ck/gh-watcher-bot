@@ -5,6 +5,7 @@ import {
   buildAdminDiagnosticsMessage,
   buildAdminMenuText,
   buildBroadcastConfirmationText,
+  formatAiModelSelection,
   formatAdminAccountButton,
   formatAdminChatButton,
   formatAdminSubscriptionButton,
@@ -50,6 +51,37 @@ describe("admin helpers", () => {
 
     expect(message).toContain("Active subscriptions: 7");
     expect(message).toContain("AI summaries: ok=3, error=1");
+    expect(message).not.toContain("AI model");
+  });
+
+  test("shows the current AI model pick in diagnostics", () => {
+    const base = {
+      lastCollectorTickAge: "1s ago",
+      githubRateLimitRemaining: "unknown",
+      activeSubscriptions: 0,
+      activeChats: 0,
+      eventsIngestedLast24h: 0,
+      errorsLast24h: 0
+    };
+
+    expect(
+      buildAdminDiagnosticsMessage({
+        ...base,
+        aiModel: formatAiModelSelection({
+          model: {
+            id: "muse-spark-1.3-contributor",
+            protocol: "responses",
+            reasoningEffort: "minimal",
+            supportsTemperature: true
+          },
+          costPerDigestUsd: 0.0002,
+          reason: "cheapest",
+          expiresAt: 0
+        })
+      })
+    ).toContain("AI model: muse-spark-1.3-contributor (cheapest) ~$0.00020/digest");
+    expect(formatAiModelSelection(null)).toBe("not selected yet");
+    expect(buildAdminDiagnosticsMessage({ ...base, aiModel: null })).not.toContain("AI model");
   });
 
   test("formats admin menu list buttons", () => {

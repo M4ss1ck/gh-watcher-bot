@@ -1,11 +1,14 @@
 // Verifies AI summary input building and API response handling without live calls.
 import { describe, expect, test } from "bun:test";
 
+import { fallbackModel } from "~/ai/models";
+import type { SummaryModel } from "~/ai/protocols";
 import {
   buildAiSummaryInput,
   clampRetryDelay,
   generateAiSummary,
   maxAttempts,
+  probeSummaryModel,
   requestTimeoutMs,
   totalBudgetMs
 } from "~/ai/summary";
@@ -17,6 +20,41 @@ import {
   pushEvent,
   releaseEvent
 } from "~/test/fixtures/github-events";
+
+// Pins the model so no test reaches models.dev or the live model list.
+const selectorFor = (model: SummaryModel) => {
+  const failures: string[] = [];
+
+  return {
+    failures,
+    getModel: async () => model,
+    reportFailure: (modelId: string) => {
+      failures.push(modelId);
+    }
+  };
+};
+
+const chatModelSelector = selectorFor(fallbackModel);
+
+const museModel: SummaryModel = {
+  id: "muse-spark-1.3-contributor",
+  protocol: "responses",
+  reasoningEffort: "minimal",
+  supportsTemperature: true
+};
+
+const responsesApiResponse = (text: string, status = "completed"): Response =>
+  new Response(
+    JSON.stringify({
+      status,
+      incomplete_details: status === "completed" ? null : { reason: "max_output_tokens" },
+      output: [
+        { type: "reasoning", summary: [] },
+        { type: "message", content: [{ type: "output_text", text }] }
+      ]
+    }),
+    { status: 200, headers: { "content-type": "application/json" } }
+  );
 
 const okResponse = (content: string, finishReason = "stop"): Response =>
   new Response(
@@ -103,6 +141,7 @@ describe("generateAiSummary", () => {
     let requestBody = "";
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       fetchImpl: async (_url, init) => {
         requestBody = String(init?.body);
         return okResponse("A quiet day with one push.");
@@ -117,6 +156,7 @@ describe("generateAiSummary", () => {
     let headers = new Headers();
     await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       fetchImpl: async (_url, init) => {
         headers = new Headers(init?.headers);
         return okResponse("Fine.");
@@ -139,8 +179,18 @@ describe("generateAiSummary", () => {
       return attempts === 1 ? new Response("boom", { status: 500 }) : okResponse("Fine.");
     };
 
-    await generateAiSummary([pushEvent], { apiKey: "test-key", delay: noopDelay, fetchImpl });
-    await generateAiSummary([pushEvent], { apiKey: "test-key", delay: noopDelay, fetchImpl });
+    await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      delay: noopDelay,
+      fetchImpl,
+      modelSelector: chatModelSelector
+    });
+    await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      delay: noopDelay,
+      fetchImpl,
+      modelSelector: chatModelSelector
+    });
 
     expect(sessionIds).toHaveLength(3);
     expect(sessionIds[0]).not.toBeNull();
@@ -152,6 +202,7 @@ describe("generateAiSummary", () => {
     let requestBody = "";
     await generateAiSummary(eventsForRepos(3), {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       fetchImpl: async (_url, init) => {
         requestBody = String(init?.body);
         return okResponse("Fine.");
@@ -168,6 +219,7 @@ describe("generateAiSummary", () => {
     let attempts = 0;
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       fetchImpl: async () => {
         attempts += 1;
         return okResponse("octocat/hello-w", "length");
@@ -182,6 +234,7 @@ describe("generateAiSummary", () => {
     let requestBody = "";
     await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       fetchImpl: async (_url, init) => {
         requestBody = String(init?.body);
         return okResponse("Fine.");
@@ -203,6 +256,7 @@ describe("generateAiSummary", () => {
   test("returns null on a non-200 response", async () => {
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       delay: noopDelay,
       fetchImpl: async () => new Response("nope", { status: 500 })
     });
@@ -213,6 +267,7 @@ describe("generateAiSummary", () => {
   test("returns null when fetch throws", async () => {
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       delay: noopDelay,
       fetchImpl: async () => {
         throw new Error("network down");
@@ -225,6 +280,7 @@ describe("generateAiSummary", () => {
   test("returns null on an empty completion", async () => {
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       delay: noopDelay,
       fetchImpl: async () => okResponse("   ")
     });
@@ -236,6 +292,7 @@ describe("generateAiSummary", () => {
     let attempts = 0;
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       delay: noopDelay,
       fetchImpl: async () => {
         attempts += 1;
@@ -255,6 +312,7 @@ describe("generateAiSummary", () => {
     const waitedMs: number[] = [];
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       delay: async (ms) => {
         waitedMs.push(ms);
       },
@@ -278,6 +336,7 @@ describe("generateAiSummary", () => {
     let attempts = 0;
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       delay: noopDelay,
       fetchImpl: async () => {
         attempts += 1;
@@ -296,6 +355,7 @@ describe("generateAiSummary", () => {
     let attempts = 0;
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       delay: noopDelay,
       fetchImpl: async () => {
         attempts += 1;
@@ -311,6 +371,7 @@ describe("generateAiSummary", () => {
     let attempts = 0;
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       delay: noopDelay,
       fetchImpl: async () => {
         attempts += 1;
@@ -326,6 +387,7 @@ describe("generateAiSummary", () => {
     let attempts = 0;
     const result = await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       delay: noopDelay,
       fetchImpl: async () => {
         attempts += 1;
@@ -344,6 +406,7 @@ describe("generateAiSummary", () => {
     resetMetricsForTests();
     await generateAiSummary([pushEvent], {
       apiKey: "test-key",
+      modelSelector: chatModelSelector,
       delay: noopDelay,
       fetchImpl: async () => new Response("boom", { status: 500 })
     });
@@ -364,5 +427,138 @@ describe("retry budget", () => {
     expect(clampRetryDelay(5_000, totalBudgetMs)).toBe(5_000);
     expect(clampRetryDelay(5_000, 13_000)).toBe(1_000);
     expect(clampRetryDelay(1_000, 11_000)).toBeNull();
+  });
+});
+
+describe("generateAiSummary model handling", () => {
+  const noopDelay = async (): Promise<void> => {};
+
+  test("sends a responses-protocol model to the responses endpoint and reads its text", async () => {
+    let url = "";
+    let body: Record<string, unknown> = {};
+    const result = await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      modelSelector: selectorFor(museModel),
+      fetchImpl: async (requestUrl, init) => {
+        url = requestUrl;
+        body = JSON.parse(String(init?.body));
+        return responsesApiResponse("octocat/hello-world: octocat pushed 1 commit.");
+      }
+    });
+
+    expect(result).toBe("octocat/hello-world: octocat pushed 1 commit.");
+    expect(url).toBe("https://opencode.ai/zen/go/v1/responses");
+    expect(body.model).toBe("muse-spark-1.3-contributor");
+    expect(body.reasoning).toEqual({ effort: "minimal" });
+  });
+
+  test("reports a truncated response as a model failure", async () => {
+    const selector = selectorFor(museModel);
+    const result = await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      modelSelector: selector,
+      fetchImpl: async () => responsesApiResponse("", "incomplete")
+    });
+
+    expect(result).toBeNull();
+    expect(selector.failures).toEqual([museModel.id]);
+  });
+
+  test("treats null chat content on a length stop as incomplete, without retrying", async () => {
+    const selector = selectorFor(fallbackModel);
+    let attempts = 0;
+    const result = await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      delay: noopDelay,
+      modelSelector: selector,
+      fetchImpl: async () => {
+        attempts += 1;
+        return new Response(
+          JSON.stringify({
+            choices: [{ finish_reason: "length", message: { content: null, reasoning: "hmm" } }]
+          })
+        );
+      }
+    });
+
+    expect(result).toBeNull();
+    expect(attempts).toBe(1);
+    expect(selector.failures).toEqual([fallbackModel.id]);
+  });
+
+  test("reports a 400 as a model failure but not a 401 or a 5xx", async () => {
+    for (const [status, expected] of [
+      [400, [fallbackModel.id]],
+      [404, [fallbackModel.id]],
+      [401, []],
+      [402, []],
+      [403, []],
+      [500, []]
+    ] as const) {
+      const selector = selectorFor(fallbackModel);
+      await generateAiSummary([pushEvent], {
+        apiKey: "test-key",
+        delay: noopDelay,
+        modelSelector: selector,
+        fetchImpl: async () => new Response("no", { status })
+      });
+
+      expect({ status, failures: selector.failures }).toEqual({ status, failures: [...expected] });
+    }
+  });
+
+  test("reports a model that keeps returning empty text", async () => {
+    const selector = selectorFor(fallbackModel);
+    await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      delay: noopDelay,
+      modelSelector: selector,
+      fetchImpl: async () => okResponse("")
+    });
+
+    expect(selector.failures).toEqual([fallbackModel.id]);
+  });
+
+  test("does not report a model after a successful summary", async () => {
+    const selector = selectorFor(fallbackModel);
+    await generateAiSummary([pushEvent], {
+      apiKey: "test-key",
+      modelSelector: selector,
+      fetchImpl: async () => okResponse("Fine.")
+    });
+
+    expect(selector.failures).toEqual([]);
+  });
+});
+
+describe("probeSummaryModel", () => {
+  test("passes a model that completes with text using the real system prompt", async () => {
+    let body: Record<string, unknown> = {};
+    const passed = await probeSummaryModel(museModel, {
+      apiKey: "test-key",
+      fetchImpl: async (_url, init) => {
+        body = JSON.parse(String(init?.body));
+        return responsesApiResponse("octocat/hello-world: octocat merged PR #7.");
+      }
+    });
+
+    expect(passed).toBe(true);
+    expect(String(body.instructions)).toContain("Never exceed 6 sentences in total");
+    expect(String(body.input)).toContain("pull request #7");
+  });
+
+  test("fails a model that truncates, errors, returns nothing, or throws", async () => {
+    const cases: (() => Promise<Response>)[] = [
+      async () => responsesApiResponse("partial", "incomplete"),
+      async () => new Response("Internal server error", { status: 500 }),
+      async () => responsesApiResponse("   "),
+      async () => {
+        throw new Error("timeout");
+      }
+    ];
+
+    for (const fetchImpl of cases) {
+      expect(await probeSummaryModel(museModel, { apiKey: "test-key", fetchImpl })).toBe(false);
+    }
   });
 });

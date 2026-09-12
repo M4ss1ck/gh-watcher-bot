@@ -11,6 +11,7 @@
     "deliverer:run": "bun run scripts/run-deliverer.ts",
     "subscription:test:create": "bun run scripts/create-test-subscription.ts",
     "poll:once": "bun run scripts/poll-once.ts",
+    "ai:check": "bun run scripts/check-summary-model.ts",
     "start": "bun run src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
