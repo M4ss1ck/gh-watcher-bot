@@ -261,6 +261,73 @@ describe("runDeliveryTask with ai summaries", () => {
     expect(sentMessages.length).toBe(1);
     expect(sentMessages[0]).toContain("AI summary");
     expect(sentMessages[0]).toContain("Two things happened today.");
+    expect(sentMessages[0]).toContain("<blockquote expandable>");
+  });
+
+  test("summarizes each repo from its own events and labels both sections", async () => {
+    const otherEvent = { ...pushEvent, id: "other-push", repoName: "octocat/other" };
+    const { store } = storeWithSubscription([pushEvent, otherEvent], aiSubscription);
+    const calls: string[][] = [];
+    const sentMessages: string[] = [];
+
+    await runDeliveryTask({
+      subscriptionId: aiSubscription.id,
+      store,
+      sendMessage: async (_chatId, text) => { sentMessages.push(text); },
+      aiSummarizer: {
+        isAvailable: () => true,
+        generate: async (events) => {
+          calls.push(events.map((event) => event.repoName));
+          return `Summary for ${events[0]?.repoName}`;
+        }
+      },
+      now: new Date("2026-05-20T13:00:00Z")
+    });
+
+    expect(calls).toEqual([[pushEvent.repoName], [otherEvent.repoName]]);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0].match(/<blockquote expandable>/gu)).toHaveLength(2);
+    expect(sentMessages[0]).toContain("octocat/other</a></b>\n<blockquote expandable>Summary for octocat/other");
+  });
+
+  test("uses the standard digest if any repository summary fails", async () => {
+    const otherEvent = { ...pushEvent, id: "other-push", repoName: "octocat/other" };
+    const { store } = storeWithSubscription([pushEvent, otherEvent], aiSubscription);
+    const sentMessages: string[] = [];
+
+    await runDeliveryTask({
+      subscriptionId: aiSubscription.id,
+      store,
+      sendMessage: async (_chatId, text) => { sentMessages.push(text); },
+      aiSummarizer: {
+        isAvailable: () => true,
+        generate: async (events) => events[0]?.repoName === otherEvent.repoName ? null : "First summary"
+      },
+      now: new Date("2026-05-20T13:00:00Z")
+    });
+
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]).not.toContain("AI summary");
+    expect(sentMessages[0].match(/<blockquote expandable>/gu)).toHaveLength(2);
+  });
+
+  test("uses the standard digest if a repository summary is blank", async () => {
+    const { store } = storeWithSubscription([pushEvent], aiSubscription);
+    const sentMessages: string[] = [];
+
+    await runDeliveryTask({
+      subscriptionId: aiSubscription.id,
+      store,
+      sendMessage: async (_chatId, text) => { sentMessages.push(text); },
+      aiSummarizer: {
+        isAvailable: () => true,
+        generate: async () => "   "
+      },
+      now: new Date("2026-05-20T13:00:00Z")
+    });
+
+    expect(sentMessages[0]).not.toContain("AI summary");
+    expect(sentMessages[0]).toContain("<blockquote expandable>");
   });
 
   test("falls back to the mechanical digest when the summarizer fails", async () => {

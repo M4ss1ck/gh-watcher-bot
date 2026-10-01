@@ -108,133 +108,121 @@ export const renderEventDigest = (
     return [];
   }
 
-  const maxMessageLength = options.maxMessageLength ?? defaultMaxMessageLength;
   const pullRequestDetails = options.pullRequestDetails ?? new Map();
-  const header = "<b>GitHub activity digest</b>";
-  const messages: string[] = [];
-  let current = header;
-  let currentRepo: string | null = null;
-
-  for (const [repoName, repoEvents] of groupByRepo(events)) {
-    const repoHeader = formatRepoHeader(repoName);
-
-    for (const event of repoEvents) {
-      const eventLine = renderEventLine(
-        event,
-        pullRequestDetails.get(event.id) ?? null
-      );
-      const candidate =
-        currentRepo === repoName
-          ? `${current}\n${eventLine}`
-          : `${current}\n\n${repoHeader}\n${eventLine}`;
-
-      if (candidate.length > maxMessageLength && current !== header) {
-        messages.push(current);
-        current = `${header}\n\n${repoHeader}\n${eventLine}`;
-      } else {
-        current = candidate;
-      }
-
-      currentRepo = repoName;
-    }
-  }
-
-  messages.push(current);
-
-  return messages;
+  return renderRepoSections(
+    [...groupByRepo(events)].map(([repoName, repoEvents]) => ({
+      repoName,
+      lines: repoEvents.map((event) =>
+        renderEventLine(event, pullRequestDetails.get(event.id) ?? null)
+      )
+    })),
+    "<b>GitHub activity digest</b>",
+    options.maxMessageLength ?? defaultMaxMessageLength
+  );
 };
 
-const maxLinkedRepos = 6;
+type RepoSection = { repoName: string; lines: string[] };
 
-const isSafeCut = (line: string, cut: number): boolean => {
-  const before = line.slice(0, cut);
-  const lastLt = before.lastIndexOf("<");
-  const lastGt = before.lastIndexOf(">");
-  const lastAmp = before.lastIndexOf("&");
-  const lastSemi = before.lastIndexOf(";");
+const quoteOpen = "<blockquote expandable>";
+const quoteClose = "</blockquote>";
+const closeTag = (tag: string): string => `</${tag.slice(1).split(/[ >]/u, 1)[0]}>`;
 
-  return lastLt <= lastGt && lastAmp <= lastSemi;
-};
-
-const splitLongLine = (line: string, maxLength: number): string[] => {
+// Splitting a long fragment closes and reopens inline tags so every part parses on its own.
+const splitHtmlFragment = (html: string, maxLength: number): string[] => {
+  const tokens = html.match(/<[^>]+>|&(?:amp|lt|gt|quot);|&#(?:\d+|x[\da-fA-F]+);|[\s\S]/gu) ?? [];
   const pieces: string[] = [];
-  let start = 0;
+  const openTags: string[] = [];
+  let current = "";
+  let hasText = false;
 
-  while (line.length - start > maxLength) {
-    const ideal = start + maxLength;
-    let cut = ideal;
+  for (const token of tokens) {
+    const isClose = token.startsWith("</");
+    const isOpen = token.startsWith("<") && !isClose;
+    const nextTags = isClose ? openTags.slice(0, -1) : isOpen ? [...openTags, token] : openTags;
+    const closingLength = nextTags.reduce((sum, tag) => sum + closeTag(tag).length, 0);
 
-    while (cut > start && !isSafeCut(line, cut)) {
-      cut -= 1;
+    if (current.length + token.length + closingLength > maxLength) {
+      if (!hasText) {
+        throw new RangeError("Message limit is too small for a repository section");
+      }
+      pieces.push(current + openTags.map(closeTag).reverse().join(""));
+      current = openTags.join("");
+      hasText = false;
     }
 
-    if (cut === start) {
-      cut = ideal;
+    current += token;
+    if (isClose) {
+      openTags.pop();
+    } else if (isOpen) {
+      openTags.push(token);
+    } else {
+      hasText = true;
     }
-
-    pieces.push(line.slice(start, cut));
-    start = cut;
   }
 
-  pieces.push(line.slice(start));
+  if (current.length > 0) {
+    pieces.push(current);
+  }
 
   return pieces;
 };
 
-export const renderAiDigest = (
-  summaryText: string,
-  events: StoredEvent[],
-  options: RenderOptions = {}
+const renderRepoSections = (
+  sections: RepoSection[],
+  header: string,
+  maxMessageLength: number
 ): string[] => {
-  const maxMessageLength = options.maxMessageLength ?? defaultMaxMessageLength;
-  const repoNames = [...new Set(events.map((event) => event.repoName))];
-  const shown = repoNames.slice(0, maxLinkedRepos);
-  const overflow = repoNames.length - shown.length;
-  const links = shown
-    .map(
-      (repoName) =>
-        `<a href="${escapeAttribute(githubRepoUrl(repoName))}">${escapeHtml(repoName)}</a>`
-    )
-    .join(" · ");
-  const linkLine = overflow > 0 ? `${links} · +${overflow} more` : links;
-
-  const header = "<b>GitHub activity digest</b> · AI summary";
-  const summaryLines = escapeHtml(summaryText).split("\n");
   const messages: string[] = [];
   let current = header;
-  let firstLine = true;
+  let currentRepo: string | null = null;
+  let hasContent = false;
 
-  const appendLine = (line: string): void => {
-    const gap = firstLine ? "\n\n" : "\n";
-
-    if (current.length + gap.length + line.length <= maxMessageLength) {
-      current = `${current}${gap}${line}`;
-    } else {
-      messages.push(current);
-      current = line;
+  const flush = (): void => {
+    if (!hasContent) {
+      return;
     }
-
-    firstLine = false;
+    messages.push(current + quoteClose);
+    current = header;
+    currentRepo = null;
+    hasContent = false;
   };
 
-  for (const line of summaryLines) {
-    if (line.length > maxMessageLength) {
-      for (const piece of splitLongLine(line, maxMessageLength)) {
-        appendLine(piece);
+  for (const { repoName, lines } of sections) {
+    const repoStart = `\n\n${formatRepoHeader(repoName)}\n${quoteOpen}`;
+    const maxFragmentLength = maxMessageLength - header.length - repoStart.length - quoteClose.length;
+
+    for (const line of lines) {
+      for (const fragment of splitHtmlFragment(line, maxFragmentLength)) {
+        const sameRepo = currentRepo === repoName;
+        const addition = sameRepo ? `\n${fragment}` : `${currentRepo === null ? "" : quoteClose}${repoStart}${fragment}`;
+
+        if (current.length + addition.length + quoteClose.length > maxMessageLength) {
+          flush();
+          current += `${repoStart}${fragment}`;
+        } else {
+          current += addition;
+        }
+
+        currentRepo = repoName;
+        hasContent = true;
       }
-    } else {
-      appendLine(line);
     }
   }
 
-  if (current.length + 2 + linkLine.length <= maxMessageLength) {
-    current = `${current}\n\n${linkLine}`;
-  } else {
-    messages.push(current);
-    current = linkLine;
-  }
-
-  messages.push(current);
-
+  flush();
   return messages;
+};
+
+export const renderAiDigest = (
+  summaries: Map<string, string>,
+  options: RenderOptions = {}
+): string[] => {
+  return renderRepoSections(
+    [...summaries].map(([repoName, summaryText]) => ({
+      repoName,
+      lines: escapeHtml(summaryText).split("\n")
+    })),
+    "<b>GitHub activity digest</b> · AI summary",
+    options.maxMessageLength ?? defaultMaxMessageLength
+  );
 };

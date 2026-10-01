@@ -357,15 +357,37 @@ const executeDeliveryTask = async (
 
   if (subscription.aiSummary && aiSummarizer.isAvailable()) {
     try {
-      const summaryText = await aiSummarizer.generate(
-        matchingEvents,
-        pullRequestDetails
-      );
+      const eventsByRepo = new Map<string, StoredEvent[]>();
+      for (const event of matchingEvents) {
+        const repoEvents = eventsByRepo.get(event.repoName) ?? [];
+        repoEvents.push(event);
+        eventsByRepo.set(event.repoName, repoEvents);
+      }
 
-      if (summaryText === null) {
+      const repos = [...eventsByRepo];
+      const results = await Promise.allSettled(
+        repos.map(([, repoEvents]) =>
+          aiSummarizer.generate(repoEvents, pullRequestDetails)
+        )
+      );
+      const rejected = results.find((result) => result.status === "rejected");
+      if (rejected?.status === "rejected") {
+        throw rejected.reason;
+      }
+
+      const summaries = new Map<string, string>();
+      for (const [index, [repoName]] of repos.entries()) {
+        const result = results[index];
+        if (result?.status !== "fulfilled" || !result.value?.trim()) {
+          break;
+        }
+        summaries.set(repoName, result.value);
+      }
+
+      if (summaries.size !== repos.length) {
         taskLogger.warn("ai summary unavailable, falling back to standard digest");
       } else {
-        messages = renderAiDigest(summaryText, matchingEvents);
+        messages = renderAiDigest(summaries);
       }
     } catch (error) {
       taskLogger.warn({ err: error }, "ai summary threw, falling back to standard digest");
