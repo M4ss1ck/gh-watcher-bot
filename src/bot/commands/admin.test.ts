@@ -74,12 +74,12 @@ describe("admin helpers", () => {
             reasoningEffort: "minimal",
             supportsTemperature: true
           },
-          costPerDigestUsd: 0.0002,
+          costPerSummaryUsd: 0.0002,
           reason: "cheapest",
           expiresAt: 0
         })
       })
-    ).toContain("AI model: muse-spark-1.3-contributor (cheapest) ~$0.00020/digest");
+    ).toContain("AI model: muse-spark-1.3-contributor (cheapest) ~$0.00020/repo summary");
     expect(formatAiModelSelection(null)).toBe("not selected yet");
     expect(buildAdminDiagnosticsMessage({ ...base, aiModel: null })).not.toContain("AI model");
   });

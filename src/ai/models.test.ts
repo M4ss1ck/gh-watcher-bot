@@ -94,7 +94,7 @@ describe("rankSummaryModels", () => {
     const [muse] = rankSummaryModels(live, catalog);
 
     // 1000 input tokens at $0.10/M plus 500 output tokens at $0.20/M.
-    expect(muse!.costPerDigestUsd).toBeCloseTo(0.0002, 10);
+    expect(muse!.costPerSummaryUsd).toBeCloseTo(0.0002, 10);
   });
 
   test("weighs output price, so a cheap-input model with pricey output ranks lower", () => {
@@ -176,7 +176,7 @@ const ranked = (...ids: string[]): RankedModel[] =>
     protocol: "chat",
     reasoningEffort: null,
     supportsTemperature: true,
-    costPerDigestUsd: (index + 1) / 10_000
+    costPerSummaryUsd: (index + 1) / 10_000
   }));
 
 const clock = () => {
@@ -367,7 +367,7 @@ describe("createModelSelector", () => {
           protocol: "responses",
           reasoningEffort: "minimal",
           supportsTemperature: true,
-          costPerDigestUsd: 0.0002
+          costPerSummaryUsd: 0.0002
         }
       ],
       probe: async (model) => {

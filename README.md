@@ -59,13 +59,13 @@ Subscription settings (preset, filters, schedule, timezone, repos, AI summary) a
 
 ### AI summaries
 
-With OPENCODE_API_KEY set, each subscription menu shows an "AI summary" toggle. When on, digests arrive as a short prose summary instead of the event list. If the AI request fails, the bot sends the standard digest instead; deliveries are never blocked on the AI provider.
+With OPENCODE_API_KEY set, each subscription menu shows an "AI summary" toggle. Every digest groups repositories under linked headings, with changes in Telegram expandable quotes. Telegram may show a short preview before a quote is expanded. When AI summary is on, the bot makes one AI request per repository and places each prose summary under that repository's heading. If any AI request fails, the bot sends the standard digest instead; deliveries are never blocked on the AI provider. Long sections split across messages to stay within Telegram's message limit.
 
-The model is not hardcoded. At boot and then daily, the bot joins opencode Go's live model list with the prices published on models.dev, ranks models by the estimated cost of one digest, and sends a real summary request to the cheapest few (three at a time, at most six). The cheapest one that finishes with text wins. Models served on the OpenAI Responses or Anthropic Messages endpoints get the matching request shape, with reasoning set to the lowest effort they accept.
+The model is not hardcoded. At boot and then daily, the bot joins opencode Go's live model list with the prices published on models.dev, ranks models by the estimated cost of one summary request, and sends a real summary request to the cheapest few (three at a time, at most six). The cheapest one that finishes with text wins. AI cost scales with the number of repositories in a digest. Models served on the OpenAI Responses or Anthropic Messages endpoints get the matching request shape, with reasoning set to the lowest effort they accept.
 
 - If a cheaper model failed its probe, or a digest request shows the chosen model truncating or rejecting requests, the bot uses the next one and checks again within the hour.
 - If models.dev or the model list is unreachable, the bot uses deepseek-v4-flash and retries within the hour.
-- /admin diagnostics shows the current pick, why it was chosen, and its estimated cost per digest.
+- /admin diagnostics shows the current pick, why it was chosen, and its estimated cost per repository summary.
 
 ## Development
 
@@ -73,6 +73,6 @@ The model is not hardcoded. At boot and then daily, the bot joins opencode Go's 
     bun run typecheck              # tsc --noEmit
     bun run db:generate            # drizzle-kit generate
     bun run poll:once <username>   # poll one GitHub account and print a summary
-    bun run ai:check               # live: pick the summary model, write one digest, check it (paid, needs OPENCODE_API_KEY)
+    bun run ai:check               # live: pick the model and check two repository summaries (needs OPENCODE_API_KEY)
 
 Architecture, constraints, and conventions live in AGENTS.md.

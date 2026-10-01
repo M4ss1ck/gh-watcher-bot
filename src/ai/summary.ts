@@ -32,7 +32,7 @@ Rules:
 - When the input holds nothing beyond the event itself, one short sentence for that repository is correct.
 - When a pull request description is present, say what the change actually does, drawing on that description. Up to three sentences for that repository is fine when there is that much real content.
 - Never exceed 6 sentences in total.
-- Start each sentence with the repository name.
+- The repository name is shown above your summary. Do not repeat it in the output.
 - Use active voice and always name the person who did it. Never write "a branch was created" without saying who created it.
 - State only what happened. Never explain why it matters, what it indicates, what it means, or what is most notable.
 - Never write a closing, completion, or summarising sentence.
@@ -45,14 +45,14 @@ Examples:
 Neither pull request in the two pairs below had a description available, so one short line was all there was to say. Their brevity comes from thin input, not from a length target.
 
 bad: M4ss1ck/maibuk saw activity around a new branch and pull request. M4ss1ck created the branch M4ss1ck/projects-archive-books, then opened and later merged pull request #143, which brings that branch into the main branch. The merge is the most notable change, indicating the projects-archive-books work is now part of the main codebase.
-good: M4ss1ck/maibuk: M4ss1ck merged PR #143 (projects-archive-books) into main.
+good: M4ss1ck merged PR #143 (projects-archive-books) into main.
 
 bad: In M4ss1ck/maibuk, a new branch M4ss1ck/better-canvas was created, followed by pull request #142 from that branch into main. The pull request was subsequently opened and then merged, completing the change.
-good: M4ss1ck/maibuk: M4ss1ck merged PR #142 (better-canvas) into main.
+good: M4ss1ck merged PR #142 (better-canvas) into main.
 
 good (rich input):
 input: - M4ss1ck merged pull request #150: Add offline cache (feature/offline-cache -> main) (+412 -38 across 9 files; 6 commits; Adds a service-worker layer that caches book pages and syncs reading progress when the connection returns. Falls back to the network when the cache is stale.)
-output: M4ss1ck/maibuk: M4ss1ck merged PR #150 (offline-cache), adding a service-worker layer that caches book pages and syncs reading progress when the connection returns, falling back to the network when the cache is stale.
+output: M4ss1ck merged PR #150 (offline-cache), adding a service-worker layer that caches book pages and syncs reading progress when the connection returns, falling back to the network when the cache is stale.
 This output is longer because the input had more real content, not because longer is better.`;
 
 type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;

@@ -247,6 +247,7 @@ describe("generateAiSummary", () => {
     expect(systemPrompt).toContain("Length must match how much there is to say");
     expect(systemPrompt).toContain("drawing on that description");
     expect(systemPrompt).toContain("Never exceed 6 sentences in total");
+    expect(systemPrompt).toContain("Do not repeat it in the output");
     expect(systemPrompt).toContain("completing the change");
     expect(systemPrompt).toContain("M4ss1ck merged PR #143");
     expect(systemPrompt).toContain("brevity comes from thin input");

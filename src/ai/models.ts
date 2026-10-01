@@ -14,7 +14,7 @@ export const liveModelsUrl = "https://opencode.ai/zen/go/v1/models";
 const catalogProviderId = "opencode-go";
 const loadTimeoutMs = 15_000;
 
-// One digest is about 900 prompt tokens and a few hundred output tokens, reasoning included.
+// One repository summary is about 900 prompt tokens and a few hundred output tokens, reasoning included.
 const expectedInputTokens = 1_000;
 const expectedOutputTokens = 500;
 
@@ -33,7 +33,7 @@ export const fallbackModel: SummaryModel = {
 };
 
 export type RankedModel = SummaryModel & {
-  costPerDigestUsd: number;
+  costPerSummaryUsd: number;
 };
 
 const catalogModelSchema = z.object({
@@ -111,7 +111,7 @@ export const rankSummaryModels = (
       protocol,
       reasoningEffort: protocol === "responses" ? lowestReasoningEffort(effortValues) : null,
       supportsTemperature: entry.temperature ?? true,
-      costPerDigestUsd:
+      costPerSummaryUsd:
         (entry.cost.input * expectedInputTokens + entry.cost.output * expectedOutputTokens) /
         1_000_000,
       releaseDate: entry.release_date ?? ""
@@ -121,7 +121,7 @@ export const rankSummaryModels = (
   // Same price: prefer the newer release, then a stable id order.
   ranked.sort(
     (left, right) =>
-      left.costPerDigestUsd - right.costPerDigestUsd ||
+      left.costPerSummaryUsd - right.costPerSummaryUsd ||
       right.releaseDate.localeCompare(left.releaseDate) ||
       left.id.localeCompare(right.id)
   );
@@ -161,7 +161,7 @@ export const loadRankedModels = async (options: {
 
 export type ModelSelection = {
   model: SummaryModel;
-  costPerDigestUsd: number | null;
+  costPerSummaryUsd: number | null;
   reason: "cheapest" | "cheaper-model-failed" | "fallback";
   expiresAt: number;
 };
@@ -189,7 +189,7 @@ export const createModelSelector = (deps: ModelSelectorDeps): ModelSelector => {
 
   const fallbackSelection = (): ModelSelection => ({
     model: fallbackModel,
-    costPerDigestUsd: null,
+    costPerSummaryUsd: null,
     reason: "fallback",
     expiresAt: now() + recheckTtlMs
   });
@@ -233,7 +233,7 @@ export const createModelSelector = (deps: ModelSelectorDeps): ModelSelector => {
           {
             model: winner.id,
             protocol: winner.protocol,
-            cost_per_digest_usd: winner.costPerDigestUsd,
+            cost_per_summary_usd: winner.costPerSummaryUsd,
             cheapest_listed: ranked[0]?.id,
             ranked_count: ranked.length
           },
@@ -247,7 +247,7 @@ export const createModelSelector = (deps: ModelSelectorDeps): ModelSelector => {
             reasoningEffort: winner.reasoningEffort,
             supportsTemperature: winner.supportsTemperature
           },
-          costPerDigestUsd: winner.costPerDigestUsd,
+          costPerSummaryUsd: winner.costPerSummaryUsd,
           reason: cheapest ? "cheapest" : "cheaper-model-failed",
           expiresAt: now() + (cheapest ? cheapestSelectionTtlMs : recheckTtlMs)
         };

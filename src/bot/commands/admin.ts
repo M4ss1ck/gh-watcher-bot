@@ -96,9 +96,9 @@ export const formatAiModelSelection = (selection: ModelSelection | null): string
   }
 
   const cost =
-    selection.costPerDigestUsd === null
+    selection.costPerSummaryUsd === null
       ? ""
-      : ` ~$${selection.costPerDigestUsd.toFixed(5)}/digest`;
+      : ` ~$${selection.costPerSummaryUsd.toFixed(5)}/repo summary`;
 
   return `${selection.model.id} (${selection.reason})${cost}`;
 };

@@ -116,9 +116,9 @@ describe("renderEventDigest", () => {
         "<b>GitHub activity digest</b>",
         "",
         "<b><a href=\"https://github.com/octocat/hello-world\">octocat/hello-world</a></b>",
-        "• <a href=\"https://github.com/octocat\">octocat</a> pushed 2 commits to main",
+        "<blockquote expandable>• <a href=\"https://github.com/octocat\">octocat</a> pushed 2 commits to main",
         "  Fix parser &lt;edge&gt;; Add tests &amp; docs",
-        "• <a href=\"https://github.com/release-bot%5Bbot%5D\">release-bot[bot]</a> published release Version &lt;1.2.3&gt;"
+        "• <a href=\"https://github.com/release-bot%5Bbot%5D\">release-bot[bot]</a> published release Version &lt;1.2.3&gt;</blockquote>"
       ].join("\n")
     ]);
   });
@@ -135,12 +135,40 @@ describe("renderEventDigest", () => {
         )
       )
     ).toBe(true);
+    expect(messages.every((message) => message.includes("<blockquote expandable>"))).toBe(true);
+  });
+
+  test("groups two repositories into independently expandable sections", () => {
+    const secondRepo = { ...pushEvent, id: "other", repoName: "octocat/other" };
+    const [message] = renderEventDigest([pushEvent, secondRepo]);
+
+    expect(message.match(/<blockquote expandable>/gu)).toHaveLength(2);
+    expect(message.match(/<\/blockquote>/gu)).toHaveLength(2);
+    expect(message).toContain("octocat/other</a></b>\n<blockquote expandable>");
+  });
+
+  test("splits an oversized event into valid quoted messages without losing text", () => {
+    const marker = "x".repeat(1200);
+    const longEvent = {
+      ...releaseEvent,
+      payload: { action: "published", release: { name: marker, tag_name: "v1" } }
+    };
+    const messages = renderEventDigest([longEvent], { maxMessageLength: 400 });
+
+    expect(messages.length).toBeGreaterThan(1);
+    expect(messages.every((message) => message.length <= 400)).toBe(true);
+    expect(messages.every((message) => message.includes("<blockquote expandable>"))).toBe(true);
+    expect(messages.every((message) =>
+      (message.match(/<blockquote expandable>/gu)?.length ?? 0) ===
+      (message.match(/<\/blockquote>/gu)?.length ?? 0)
+    )).toBe(true);
+    expect(messages.join("").match(/x{10,}/gu)?.join("")).toHaveLength(1200);
   });
 });
 
 describe("renderAiDigest", () => {
   test("escapes the summary and links each repository", () => {
-    const [message] = renderAiDigest("Shipped <v2> & more", [pushEvent]);
+    const [message] = renderAiDigest(new Map([[pushEvent.repoName, "Shipped <v2> & more"]]));
 
     expect(message).toContain("<b>GitHub activity digest</b>");
     expect(message).toContain("Shipped &lt;v2&gt; &amp; more");
@@ -149,15 +177,14 @@ describe("renderAiDigest", () => {
   });
 
   test("returns exactly one message for a short summary", () => {
-    const messages = renderAiDigest("Shipped <v2> & more", [pushEvent]);
+    const messages = renderAiDigest(new Map([[pushEvent.repoName, "Shipped <v2> & more"]]));
 
     expect(messages).toEqual([
       [
         "<b>GitHub activity digest</b> · AI summary",
         "",
-        "Shipped &lt;v2&gt; &amp; more",
-        "",
-        `<a href="https://github.com/octocat/hello-world">octocat/hello-world</a>`
+        `<b><a href="https://github.com/octocat/hello-world">octocat/hello-world</a></b>`,
+        "<blockquote expandable>Shipped &lt;v2&gt; &amp; more</blockquote>"
       ].join("\n")
     ]);
   });
@@ -167,44 +194,45 @@ describe("renderAiDigest", () => {
       { length: 30 },
       (_, index) => `Line ${index}: some text here`
     ).join("\n");
-    const messages = renderAiDigest(longSummary, [pushEvent], { maxMessageLength: 100 });
+    const messages = renderAiDigest(new Map([[pushEvent.repoName, longSummary]]), { maxMessageLength: 250 });
 
     expect(messages.length).toBeGreaterThan(1);
-    expect(messages.every((message) => message.length <= 100)).toBe(true);
+    expect(messages.every((message) => message.length <= 250)).toBe(true);
   });
 
-  test("puts the header only on the first message", () => {
-    const messages = renderAiDigest("line\n".repeat(50), [pushEvent], { maxMessageLength: 100 });
+  test("repeats the header and repo label after a split", () => {
+    const messages = renderAiDigest(new Map([[pushEvent.repoName, "line\n".repeat(50)]]), { maxMessageLength: 250 });
 
-    expect(messages[0]).toContain("<b>GitHub activity digest</b>");
-    expect(messages.slice(1).every((message) => !message.includes("GitHub activity digest"))).toBe(
-      true
-    );
+    expect(messages.every((message) => message.includes("<b>GitHub activity digest</b>"))).toBe(true);
+    expect(messages.every((message) => message.includes(pushEvent.repoName))).toBe(true);
   });
 
-  test("puts the repo link line only on the last message", () => {
-    const messages = renderAiDigest("line\n".repeat(50), [pushEvent], { maxMessageLength: 100 });
+  test("keeps each repository's prose in its own quote", () => {
+    const messages = renderAiDigest(new Map([
+      [pushEvent.repoName, "First repo changed."],
+      ["octocat/other", "Second repo changed."]
+    ]));
 
-    expect(messages[messages.length - 1]).toContain("https://github.com/octocat/hello-world");
-    expect(
-      messages.slice(0, -1).every((message) => !message.includes("github.com/octocat/hello-world"))
-    ).toBe(true);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].match(/<blockquote expandable>/gu)).toHaveLength(2);
+    expect(messages[0]).toContain("First repo changed.</blockquote>");
+    expect(messages[0]).toContain("Second repo changed.</blockquote>");
   });
 
   test("hard-splits a single line longer than the budget", () => {
-    const messages = renderAiDigest("word ".repeat(30), [pushEvent], { maxMessageLength: 80 });
+    const messages = renderAiDigest(new Map([[pushEvent.repoName, "word ".repeat(100)]]), { maxMessageLength: 250 });
 
     expect(messages.length).toBeGreaterThan(1);
-    expect(messages.every((message) => message.length <= 80)).toBe(true);
+    expect(messages.every((message) => message.length <= 250)).toBe(true);
   });
 
   test("never splits inside an escaped entity", () => {
-    const messages = renderAiDigest(`${"x".repeat(17)}&amp;y`, [pushEvent], {
-      maxMessageLength: 20
+    const messages = renderAiDigest(new Map([[pushEvent.repoName, `${"x".repeat(200)}&y`]]), {
+      maxMessageLength: 250
     });
 
     expect(
-      messages.every((message) => message.includes("&amp;") || !message.includes("&"))
+      messages.every((message) => !message.includes("&") || message.includes("&amp;"))
     ).toBe(true);
   });
 });
