@@ -63,7 +63,7 @@ A digest arrives as one Telegram rich message: a "@login · GitHub activity" tit
 
 A rich message holds up to 32,768 characters and 500 blocks, so most digests fit in one. Bigger ones split at repository boundaries, repeating the title on each part. Mentions, issue numbers and commands written in commit messages are shown as plain text, not links.
 
-If Telegram rejects the rich message, the same digest is sent as classic HTML messages instead. Admin Diagnostics shows how often that happens.
+If Telegram rejects the rich message, the same digest is sent as classic HTML messages instead, with each repository's changes in an expandable quote. Admin Diagnostics shows how often that happens.
 
 ### AI summaries
 

@@ -170,6 +170,19 @@ describe("renderRichEventDigest", () => {
     expectValidParts(parts, richMessageLimits);
   });
 
+  test("splits at the real Bot API limits and keeps every event", () => {
+    const events = [...manyPushes("octocat/one", 150), ...manyPushes("octocat/two", 150)];
+    const parts = renderRichEventDigest(events, base);
+
+    // 150 pushes are about 600 blocks, so each repo is cut once: the first
+    // chunk fills a part to the block limit, the rest goes in the next part.
+    expect(parts).toHaveLength(4);
+    expectValidParts(parts, richMessageLimits);
+    expect(countRichBlocks(parts[0] ?? "")).toBeGreaterThan(richMessageLimits.maxBlocks - 10);
+    expect(parts[2]).toContain("octocat/two</a> · 150 pushes</summary>");
+    expect(parts.join("").match(/>pushed 2 commits to main</gu)).toHaveLength(300);
+  });
+
   test("caps commit lines per push and counts the rest", () => {
     const bigPush: StoredEvent = {
       ...pushEvent,

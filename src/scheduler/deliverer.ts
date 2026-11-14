@@ -19,7 +19,8 @@ import {
   incrementDeliverySent,
   incrementDigestFormat,
   incrementTelegramApiError,
-  observeDeliveryDuration
+  observeDeliveryDuration,
+  type DigestFormatLabel
 } from "~/lib/metrics";
 import { createDeliveryQueue } from "~/scheduler/queue";
 import { getScheduleCronExpression } from "~/scheduler/presets";
@@ -41,7 +42,7 @@ export type DeliveryStore = {
   writeDelivererHeartbeat: (date?: Date) => Promise<void>;
 };
 
-export type DigestFormat = "rich" | "html_fallback";
+export type DigestFormat = DigestFormatLabel;
 
 // One digest rendered both ways, so a rejected rich message can be resent as HTML.
 export type Digest = { rich: string[]; html: string[] };
@@ -280,6 +281,22 @@ const getTelegramErrorCode = (error: unknown): number | null => {
   return typeof nested.error_code === "number" ? nested.error_code : null;
 };
 
+// 400s about the chat itself would fail as HTML too, so they are not a reason to fall back.
+const chatLevelBadRequest = /chat not found|not enough rights|have no rights|peer_id_invalid|chat_write_forbidden/iu;
+
+const isRichMessageRejection = (error: unknown): boolean => {
+  if (getTelegramErrorCode(error) !== 400) {
+    return false;
+  }
+
+  const description =
+    typeof error === "object" && error !== null && "description" in error
+      ? String(error.description)
+      : "";
+
+  return !chatLevelBadRequest.test(description);
+};
+
 export type SentDigest = { format: DigestFormat; messageCount: number };
 
 // Only a rejection of the first part falls back to HTML: nothing has reached the
@@ -300,7 +317,7 @@ export const sendDigest = async (
   try {
     await transport.sendRich(chatId, first);
   } catch (error) {
-    if (getTelegramErrorCode(error) !== 400) {
+    if (!isRichMessageRejection(error)) {
       throw error;
     }
 

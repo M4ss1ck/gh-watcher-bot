@@ -75,10 +75,9 @@ const pushDetail = (payload: GitHubEventPayload): string | null => {
 export type PushCommitLines = { lines: string[]; remaining: number };
 
 // First line of each shown commit, for renderers that list commits separately.
-export const pushCommitLines = (
-  event: StoredEvent,
-  maxCommits = 3
-): PushCommitLines => {
+const maxCommitLines = 3;
+
+export const pushCommitLines = (event: StoredEvent): PushCommitLines => {
   const commits = event.payload.commits;
 
   if (event.type !== "PushEvent" || !Array.isArray(commits)) {
@@ -92,7 +91,7 @@ export const pushCommitLines = (
     .filter((message): message is string => message !== null)
     .map((message) => message.split("\n", 1)[0]?.trim() ?? "")
     .filter((line) => line !== "")
-    .slice(0, maxCommits);
+    .slice(0, maxCommitLines);
   const size = event.payload.size;
   const total = typeof size === "number" ? Math.max(size, commits.length) : commits.length;
 

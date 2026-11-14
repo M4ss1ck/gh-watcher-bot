@@ -503,6 +503,19 @@ describe("sendDigest", () => {
     }
   });
 
+  test("does not fall back on a 400 about the chat itself", async () => {
+    const error = new GrammyError(
+      "Call to 'sendRichMessage' failed!",
+      { ok: false, error_code: 400, description: "Bad Request: chat not found" },
+      "sendRichMessage",
+      {}
+    );
+    const { sent, transport } = recordingTransport((index) => (index === 0 ? error : null));
+
+    await expect(sendDigest(transport, 42, digest, silentLogger)).rejects.toBe(error);
+    expect(sent).toEqual([]);
+  });
+
   test("does not fall back when a later rich part fails, even with a 400", async () => {
     const error = telegramError(400);
     const { sent, transport } = recordingTransport((index) =>

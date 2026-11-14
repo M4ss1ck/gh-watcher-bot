@@ -67,7 +67,8 @@ Do not add: webhooks, Express/Hono/any HTTP server, Redis, BullMQ, conversations
     apply.ts              # given filter JSON + event, return boolean
     glob.ts               # minimatch-based repo matching
   /formatting
-    render.ts             # event list → Telegram HTML message(s)
+    render.ts             # event list → Telegram HTML message(s), the fallback format
+    rich.ts               # event list or AI prose → Telegram rich message part(s)
     summarize.ts          # collapse multi-commit pushes, etc.
   /lifecycle
     shutdown.ts           # signal handlers, drain queue, stop bot, close DB
@@ -134,7 +135,7 @@ Terms:
   3. Query events for `accountId` newer than `lastDeliveredAt` (or all if null).
   4. Apply filters (`/filters/apply.ts`).
   5. If 0 events pass: do not send anything. Advance cursor to `now`. Log at debug.
-  6. If >0: render the digest twice, as rich message parts (`/formatting/rich.ts`) and as HTML messages (`/formatting/render.ts`). If the subscription has `aiSummary` on and `OPENCODE_API_KEY` is set, ask `/src/ai/summary.ts` for a prose summary (opencode Go, `deepseek-v4-flash`, 30s timeout; every request sends `user-agent: gh-watcher-bot/1.0` and an `x-opencode-session` UUID that is shared by retries of one digest and new for each digest, as opencode Go requires) and use it as the AI digest; on any AI failure fall back to the standard digest. Send through `sendDigest` in `/scheduler/deliverer.ts`, the one send path shared by scheduled delivery, Preview now and admin force-deliver: each rich part goes out with `sendRichMessage` and `skip_entity_detection: true` (so `@user`, `#123` and `/cmd` in commit text are not auto-linked). If the first part gets a 400, send the HTML version of the same digest kind with `sendMessage` instead. A failure on a later part is a normal send failure (step 7). On success, advance cursor to the newest event's `createdAt`.
+  6. If >0: render the digest twice, as rich message parts (`/formatting/rich.ts`) and as HTML messages (`/formatting/render.ts`). If the subscription has `aiSummary` on and `OPENCODE_API_KEY` is set, ask `/src/ai/summary.ts` for a prose summary (opencode Go, `deepseek-v4-flash`, 30s timeout; every request sends `user-agent: gh-watcher-bot/1.0` and an `x-opencode-session` UUID that is shared by retries of one digest and new for each digest, as opencode Go requires) and use it as the AI digest; on any AI failure fall back to the standard digest. Send through `sendDigest` in `/scheduler/deliverer.ts`, the one send path shared by scheduled delivery, Preview now and admin force-deliver: each rich part goes out with `sendRichMessage` and `skip_entity_detection: true` (so `@user`, `#123` and `/cmd` in commit text are not auto-linked). If the first part gets a 400 that is not about the chat itself (such as "chat not found"), send the HTML version of the same digest kind with `sendMessage` instead. A failure on a later part is a normal send failure (step 7). On success, advance cursor to the newest event's `createdAt`.
   7. On Telegram send failure: log error, do NOT advance cursor. The next scheduled run will retry.
 - Write a heartbeat (`key="deliverer.last_tick"`) after each delivery task settles (success or failure).
 

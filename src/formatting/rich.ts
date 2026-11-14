@@ -141,9 +141,8 @@ const paragraphs = (text: string): string[] =>
 type RepoSection = {
   repoName: string;
   counts: string;
-  // Body wrapper, e.g. "<ul>" and "</ul>" around list items.
-  bodyOpen: string;
-  bodyClose: string;
+  // Event items are <li> and need a <ul> around them; AI paragraphs stand alone.
+  list: boolean;
   items: string[];
 };
 
@@ -161,23 +160,24 @@ const groupByRepo = (events: StoredEvent[]): Map<string, StoredEvent[]> => {
 
 type Part = { body: string; blocks: number };
 
+const tooSmall = (): RangeError =>
+  new RangeError("Rich message limits are too small for one digest item");
+
 // Packs repo sections into as few messages as the limits allow. A section moves
 // whole to the next message when it does not fit; it is cut only when it would
 // not fit even an empty message.
-const packSections = (
-  sections: RepoSection[],
-  header: string,
-  limits: RichMessageLimits
-): string[] => {
+const packSections = (sections: RepoSection[], options: RichDigestOptions): string[] => {
+  const header = renderHeader(options.login, options.since);
+  const limits = options.limits ?? richMessageLimits;
   const open = sections.length === 1 ? " open" : "";
   const charBudget = limits.maxCharacters - header.length - footer.length;
   const blockBudget = limits.maxBlocks - countRichBlocks(header) - countRichBlocks(footer);
   const parts: Part[] = [];
   let current: Part = { body: "", blocks: 0 };
 
-  const fits = (part: Part, html: string): boolean =>
-    part.body.length + html.length <= charBudget &&
-    part.blocks + countRichBlocks(html) <= blockBudget;
+  const fits = (html: string): boolean =>
+    current.body.length + html.length <= charBudget &&
+    current.blocks + countRichBlocks(html) <= blockBudget;
   const append = (html: string): void => {
     current = { body: current.body + html, blocks: current.blocks + countRichBlocks(html) };
   };
@@ -189,39 +189,38 @@ const packSections = (
   };
 
   for (const section of sections) {
+    const counts = section.counts === "" ? "" : ` · ${escapeHtml(section.counts)}`;
     const sectionOpen = (continued: boolean): string =>
-      `<details${open}><summary>${repoLink(section.repoName)}${section.counts === "" ? "" : ` · ${escapeHtml(section.counts)}`}${continued ? " (continued)" : ""}</summary>${section.bodyOpen}`;
-    const sectionClose = `${section.bodyClose}</details>`;
+      `<details${open}><summary>${repoLink(section.repoName)}${counts}${continued ? " (continued)" : ""}</summary>${section.list ? "<ul>" : ""}`;
+    const sectionClose = `${section.list ? "</ul>" : ""}</details>`;
     const whole = `${sectionOpen(false)}${section.items.join("")}${sectionClose}`;
 
-    if (fits(current, whole)) {
+    if (!fits(whole)) {
+      flush();
+    }
+
+    if (fits(whole)) {
       append(whole);
       continue;
     }
 
-    flush();
-
-    if (fits(current, whole)) {
-      append(whole);
-      continue;
-    }
-
+    // Last resort: the section alone outgrows a message, so cut it between items.
     let chunk = sectionOpen(false);
     let chunkItems = 0;
 
     for (const item of section.items) {
-      if (!fits(current, `${chunk}${item}${sectionClose}`)) {
+      if (!fits(`${chunk}${item}${sectionClose}`)) {
         if (chunkItems === 0) {
-          throw new RangeError("Rich message limits are too small for one digest item");
+          throw tooSmall();
         }
         append(`${chunk}${sectionClose}`);
         flush();
         chunk = sectionOpen(true);
         chunkItems = 0;
+      }
 
-        if (!fits(current, `${chunk}${item}${sectionClose}`)) {
-          throw new RangeError("Rich message limits are too small for one digest item");
-        }
+      if (!fits(`${chunk}${item}${sectionClose}`)) {
+        throw tooSmall();
       }
 
       chunk += item;
@@ -250,18 +249,13 @@ export const renderRichEventDigest = (
   const sections = [...groupByRepo(events)].map(([repoName, repoEvents]) => ({
     repoName,
     counts: formatCounts(repoEvents),
-    bodyOpen: "<ul>",
-    bodyClose: "</ul>",
+    list: true,
     items: repoEvents.map((event) =>
       renderEventItem(event, pullRequestDetails.get(event.id) ?? null)
     )
   }));
 
-  return packSections(
-    sections,
-    renderHeader(options.login, options.since),
-    options.limits ?? richMessageLimits
-  );
+  return packSections(sections, options);
 };
 
 // The model returns plain text; it is escaped here, so prompts stay unchanged.
@@ -278,14 +272,9 @@ export const renderRichAiDigest = (
   const sections = [...summaries].map(([repoName, text]) => ({
     repoName,
     counts: formatCounts(eventsByRepo.get(repoName) ?? []),
-    bodyOpen: "",
-    bodyClose: "",
+    list: false,
     items: paragraphs(text)
   }));
 
-  return packSections(
-    sections,
-    renderHeader(options.login, options.since),
-    options.limits ?? richMessageLimits
-  );
+  return packSections(sections, options);
 };
