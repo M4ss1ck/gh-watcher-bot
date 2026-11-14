@@ -49,9 +49,10 @@ const samples: Record<string, Digest> = {
     rich: renderRichAiDigest(aiSummaries, [pushEvent, otherRepo], richOptions),
     html: renderAiDigest(aiSummaries)
   },
-  // An unknown tag makes Telegram reject the first part, which exercises the HTML fallback.
+  // 600 list items break the 500-block limit, so Telegram rejects the first part
+  // with RICH_MESSAGE_BLOCKS_TOO_MANY and the HTML fallback runs.
   fallback: {
-    rich: ["<tg-not-a-tag>forced fallback</tg-not-a-tag>"],
+    rich: [`<ul>${"<li>forced fallback</li>".repeat(600)}</ul>`],
     html: renderEventDigest([pushEvent])
   }
 };

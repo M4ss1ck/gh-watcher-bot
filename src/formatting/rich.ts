@@ -24,11 +24,17 @@ export type RichDigestOptions = {
 // Long single texts are clipped so one event can never outgrow a whole message.
 const maxTextLength = 1_000;
 const footer = "<footer>Manage with /subscribe</footer>";
-const blockTagPattern = /<(?:h[1-6]|p|ul|ol|li|details|summary|footer|blockquote|pre|table|tr|hr|aside)[\s>]/gu;
+const blockTagPattern = /<(?:h[1-6]|p|ul|ol|li|details|footer|blockquote|pre|table|tr|hr|aside)[\s>]/gu;
+// Text right before a nested block (like "pushed 2 commits<ul>") is wrapped in an
+// implicit paragraph that Telegram counts as one more block.
+const implicitParagraphPattern = /(?:[^>]|<\/(?:a|b|i|u|s|em|strong|code|tg-time)>)<(?:ul|ol|p|blockquote|details|pre)[\s>]/gu;
 
-// User text is escaped before it gets here, so a literal "<" only starts real markup.
+// Matches limits probed against the live Bot API (Nov 2026): ul, li, p, details
+// and footer count one each, summary counts none, and text followed by a nested
+// list adds one. User text is escaped before it gets here, so "<" only starts markup.
 export const countRichBlocks = (html: string): number =>
-  html.match(blockTagPattern)?.length ?? 0;
+  (html.match(blockTagPattern)?.length ?? 0) +
+  (html.match(implicitParagraphPattern)?.length ?? 0);
 
 const clip = (value: string): string =>
   value.length <= maxTextLength ? value : `${value.slice(0, maxTextLength - 1).trimEnd()}…`;

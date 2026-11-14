@@ -51,6 +51,18 @@ const expectValidParts = (
 };
 
 describe("countRichBlocks", () => {
+  // Each case is the largest unit count the live Bot API accepted under its
+  // 500-block limit, so the counter must give <= 500 there and > 500 at n + 1.
+  test.each([
+    ["flat list items", (n: number) => `<ul>${"<li>x</li>".repeat(n)}</ul>`, 499],
+    ["paragraphs", (n: number) => "<p>x</p>".repeat(n), 500],
+    ["items with text before a nested list", (n: number) => `<ul>${"<li>x<ul><li>a</li><li>b</li></ul></li>".repeat(n)}</ul>`, 99],
+    ["details sections", (n: number) => '<details><summary><a href="https://github.com/r">r</a> · 1</summary><ul><li>x</li></ul></details>'.repeat(n), 166]
+  ])("matches Telegram's count for %s", (_name, build, maxAccepted) => {
+    expect(countRichBlocks(build(maxAccepted))).toBeLessThanOrEqual(500);
+    expect(countRichBlocks(build(maxAccepted + 1))).toBeGreaterThan(500);
+  });
+
   test("counts block elements and list items but not inline tags or escaped text", () => {
     expect(
       countRichBlocks("<h3>t</h3><p>a <b>b</b> &lt;p&gt;</p><ul><li>x</li><li>y</li></ul>")
