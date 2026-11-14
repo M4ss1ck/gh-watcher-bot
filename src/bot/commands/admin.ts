@@ -25,7 +25,13 @@ import { createGitHubClient, getGitHubRateLimitRemaining } from "~/github/client
 import { pollGitHubAccount } from "~/github/poller";
 import { logger } from "~/lib/logger";
 import { getMetricsSnapshot, type MetricsSnapshot } from "~/lib/metrics";
-import { runDeliveryTask } from "~/scheduler/deliverer";
+import {
+  createDeliveryTransport,
+  runDeliveryTask,
+  type DeliveryApi,
+  type DeliveryTaskOptions,
+  type DeliveryTaskResult
+} from "~/scheduler/deliverer";
 
 export { isAdminUserId };
 
@@ -507,6 +513,14 @@ export const adminForcePollMenu = new Menu<Context>(adminForcePollMenuId)
     await ctx.editMessageText(buildAdminMenuText());
   });
 
+// Force-deliver goes through the same transport as scheduled delivery.
+export const forceDeliverSubscription = (
+  api: DeliveryApi,
+  subscriptionId: number,
+  deliver: (options: DeliveryTaskOptions) => Promise<DeliveryTaskResult> = runDeliveryTask
+): Promise<DeliveryTaskResult> =>
+  deliver({ subscriptionId, transport: createDeliveryTransport(api) });
+
 export const adminForceDeliverMenu = new Menu<Context>(adminForceDeliverMenuId)
   .dynamic(async (ctx, range) => {
     const queries = await import("~/db/queries");
@@ -521,12 +535,10 @@ export const adminForceDeliverMenu = new Menu<Context>(adminForceDeliverMenuId)
           return;
         }
 
-        const result = await runDeliveryTask({
-          subscriptionId: subscription.id,
-          sendMessage: async (chatId, text) => {
-            await callbackCtx.api.sendMessage(chatId, text);
-          }
-        });
+        const result = await forceDeliverSubscription(
+          callbackCtx.api,
+          subscription.id
+        );
 
         await callbackCtx.reply(
           `Force-deliver #${subscription.id}: ${result.status}, events ${result.eventCount}`

@@ -9,6 +9,7 @@ import {
   formatAdminAccountButton,
   formatAdminChatButton,
   formatAdminSubscriptionButton,
+  forceDeliverSubscription,
   isAdminUserId
 } from "~/bot/commands/admin";
 
@@ -106,5 +107,31 @@ describe("admin helpers", () => {
       "Broadcast to 2 active chats?\n\nhello"
     );
     expect(buildBroadcastConfirmationText("x".repeat(160), 1)).toContain("...");
+  });
+});
+
+describe("forceDeliverSubscription", () => {
+  test("delivers through the shared rich transport", async () => {
+    const calls: unknown[][] = [];
+
+    const result = await forceDeliverSubscription(
+      {
+        sendRichMessage: async (...args) => {
+          calls.push(args);
+        },
+        sendMessage: async () => {
+          throw new Error("unexpected HTML send");
+        }
+      },
+      7,
+      async ({ subscriptionId, transport }) => {
+        await transport.sendRich(42, "<p>digest</p>");
+
+        return { status: "ok", eventCount: subscriptionId, messageCount: 1, format: "rich" };
+      }
+    );
+
+    expect(result.eventCount).toBe(7);
+    expect(calls).toEqual([[42, { html: "<p>digest</p>", skip_entity_detection: true }]]);
   });
 });

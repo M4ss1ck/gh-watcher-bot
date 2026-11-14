@@ -11,6 +11,7 @@ import type { GitHubPullRequestDetail, StoredEvent } from "~/github/types";
 import { generateAiSummary, isAiSummaryAvailable } from "~/ai/summary";
 import { applyFilters } from "~/filters/apply";
 import { renderAiDigest, renderEventDigest } from "~/formatting/render";
+import { renderRichAiDigest, renderRichEventDigest } from "~/formatting/rich";
 import { writeDelivererHeartbeat } from "~/lifecycle/heartbeat";
 import { shuttingDown } from "~/lifecycle/shutdown";
 import { createChildLogger, logger } from "~/lib/logger";
@@ -39,10 +40,38 @@ export type DeliveryStore = {
   writeDelivererHeartbeat: (date?: Date) => Promise<void>;
 };
 
-export type DeliverySendMessage = (
-  chatId: number,
-  text: string
-) => Promise<void>;
+export type DigestFormat = "rich" | "html_fallback";
+
+// One digest rendered both ways, so a rejected rich message can be resent as HTML.
+export type Digest = { rich: string[]; html: string[] };
+
+export type DeliveryTransport = {
+  sendRich: (chatId: number, html: string) => Promise<void>;
+  sendHtml: (chatId: number, html: string) => Promise<void>;
+};
+
+// The slice of grammY's Api the send path needs; Api itself satisfies it.
+export type DeliveryApi = {
+  sendRichMessage: (
+    chatId: number,
+    richMessage: { html: string; skip_entity_detection: boolean }
+  ) => Promise<unknown>;
+  sendMessage: (
+    chatId: number,
+    text: string,
+    other: { link_preview_options: { is_disabled: boolean } }
+  ) => Promise<unknown>;
+};
+
+export const createDeliveryTransport = (api: DeliveryApi): DeliveryTransport => ({
+  sendRich: async (chatId, html) => {
+    // Commit messages often mention @users, #issues and /paths; linking them is noise.
+    await api.sendRichMessage(chatId, { html, skip_entity_detection: true });
+  },
+  sendHtml: async (chatId, html) => {
+    await api.sendMessage(chatId, html, { link_preview_options: { is_disabled: true } });
+  }
+});
 
 export type DeliveryTaskInput = {
   subscriptionId: number;
@@ -66,7 +95,7 @@ const defaultAiSummarizer: AiSummarizer = {
 
 export type DeliveryTaskOptions = DeliveryTaskInput & {
   store?: DeliveryStore;
-  sendMessage: DeliverySendMessage;
+  transport: DeliveryTransport;
   enrichmentClient?: DeliveryEnrichmentClient;
   aiSummarizer?: AiSummarizer;
   now?: Date;
@@ -77,6 +106,7 @@ export type DeliveryTaskResult = {
   status: "ok" | "empty" | "skipped" | "missing";
   eventCount: number;
   messageCount: number;
+  format: DigestFormat | null;
 };
 
 export type DelivererStore = DeliveryStore & {
@@ -249,6 +279,46 @@ const getTelegramErrorCode = (error: unknown): number | null => {
   return typeof nested.error_code === "number" ? nested.error_code : null;
 };
 
+export type SentDigest = { format: DigestFormat; messageCount: number };
+
+// Only a rejection of the first part falls back to HTML: nothing has reached the
+// chat yet. A failure on a later part throws so the cursor stays put and the
+// next run retries. 429 and 5xx never get here, auto-retry handles them.
+export const sendDigest = async (
+  transport: DeliveryTransport,
+  chatId: number,
+  digest: Digest,
+  taskLogger: Pick<typeof logger, "warn">
+): Promise<SentDigest> => {
+  const [first, ...rest] = digest.rich;
+
+  if (first === undefined) {
+    throw new Error("cannot send an empty digest");
+  }
+
+  try {
+    await transport.sendRich(chatId, first);
+  } catch (error) {
+    if (getTelegramErrorCode(error) !== 400) {
+      throw error;
+    }
+
+    taskLogger.warn({ err: error }, "rich digest rejected, sending HTML fallback");
+
+    for (const message of digest.html) {
+      await transport.sendHtml(chatId, message);
+    }
+
+    return { format: "html_fallback", messageCount: digest.html.length };
+  }
+
+  for (const message of rest) {
+    await transport.sendRich(chatId, message);
+  }
+
+  return { format: "rich", messageCount: digest.rich.length };
+};
+
 const executeDeliveryTask = async (
   options: DeliveryTaskOptions,
   now: Date
@@ -264,7 +334,8 @@ const executeDeliveryTask = async (
     return {
       status: "skipped",
       eventCount: 0,
-      messageCount: 0
+      messageCount: 0,
+      format: null
     };
   }
 
@@ -282,7 +353,8 @@ const executeDeliveryTask = async (
     return {
       status: "missing",
       eventCount: 0,
-      messageCount: 0
+      messageCount: 0,
+      format: null
     };
   }
 
@@ -299,7 +371,8 @@ const executeDeliveryTask = async (
     return {
       status: "skipped",
       eventCount: 0,
-      messageCount: 0
+      messageCount: 0,
+      format: null
     };
   }
 
@@ -339,7 +412,8 @@ const executeDeliveryTask = async (
     return {
       status: "empty",
       eventCount: 0,
-      messageCount: 0
+      messageCount: 0,
+      format: null
     };
   }
 
@@ -353,7 +427,12 @@ const executeDeliveryTask = async (
       : new Map<string, GitHubPullRequestDetail>();
 
   const aiSummarizer = options.aiSummarizer ?? defaultAiSummarizer;
-  let messages: string[] | null = null;
+  const richOptions = {
+    login: subscription.accountLogin,
+    since: subscription.lastDeliveredAt,
+    pullRequestDetails
+  };
+  let digest: Digest | null = null;
 
   if (subscription.aiSummary && aiSummarizer.isAvailable()) {
     try {
@@ -387,20 +466,29 @@ const executeDeliveryTask = async (
       if (summaries.size !== repos.length) {
         taskLogger.warn("ai summary unavailable, falling back to standard digest");
       } else {
-        messages = renderAiDigest(summaries);
+        digest = {
+          rich: renderRichAiDigest(summaries, matchingEvents, richOptions),
+          html: renderAiDigest(summaries)
+        };
       }
     } catch (error) {
       taskLogger.warn({ err: error }, "ai summary threw, falling back to standard digest");
     }
   }
 
-  if (messages === null) {
-    messages = renderEventDigest(matchingEvents, { pullRequestDetails });
+  if (digest === null) {
+    digest = {
+      rich: renderRichEventDigest(matchingEvents, richOptions),
+      html: renderEventDigest(matchingEvents, { pullRequestDetails })
+    };
   }
 
-  for (const message of messages) {
-    await options.sendMessage(subscription.chatId, message);
-  }
+  const sent = await sendDigest(
+    options.transport,
+    subscription.chatId,
+    digest,
+    taskLogger
+  );
 
   await store.updateSubscriptionDeliveryCursor(
     subscription.id,
@@ -412,7 +500,7 @@ const executeDeliveryTask = async (
   taskLogger.info(
     {
       event_count: matchingEvents.length,
-      message_count: messages.length,
+      message_count: sent.messageCount,
       duration_ms: Date.now() - startedAt
     },
     "delivery complete"
@@ -421,7 +509,8 @@ const executeDeliveryTask = async (
   return {
     status: "ok",
     eventCount: matchingEvents.length,
-    messageCount: messages.length
+    messageCount: sent.messageCount,
+    format: sent.format
   };
 };
 
@@ -471,14 +560,6 @@ export const runDeliveryTask = async (
   return result;
 };
 
-const createSendMessage =
-  (api: Api): DeliverySendMessage =>
-  async (chatId, text) => {
-    await api.sendMessage(chatId, text, {
-      link_preview_options: { is_disabled: true }
-    });
-  };
-
 const getScheduleOverrideMap = (
   overrides: DeliveryScheduleOverride[] | undefined
 ): Map<number, string> =>
@@ -498,7 +579,7 @@ export const startDeliverer = (options: StartDelivererOptions): Deliverer => {
       runDeliveryTask({
         subscriptionId: input.subscriptionId,
         store,
-        sendMessage: createSendMessage(options.api),
+        transport: createDeliveryTransport(options.api),
         enrichmentClient: options.enrichmentClient
       })
   });
