@@ -30,7 +30,7 @@ export const escapeHtml = (value: string): string =>
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
 
-const escapeAttribute = (value: string): string =>
+export const escapeAttribute = (value: string): string =>
   escapeHtml(value).replaceAll("\"", "&quot;");
 
 const formatCompactCount = (value: number): string => {

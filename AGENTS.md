@@ -67,7 +67,8 @@ Do not add: webhooks, Express/Hono/any HTTP server, Redis, BullMQ, conversations
     apply.ts              # given filter JSON + event, return boolean
     glob.ts               # minimatch-based repo matching
   /formatting
-    render.ts             # event list → Telegram HTML message(s)
+    render.ts             # event list → Telegram HTML message(s), the fallback format
+    rich.ts               # event list or AI prose → Telegram rich message part(s)
     summarize.ts          # collapse multi-commit pushes, etc.
   /lifecycle
     shutdown.ts           # signal handlers, drain queue, stop bot, close DB
@@ -112,6 +113,13 @@ No `delivery_log` table — cursor is the source of truth.
 
 ## Delivery
 
+Terms:
+
+- **Digest**: the message(s) a subscription receives in one scheduled run.
+- **AI digest**: a digest whose content is the AI summary (`renderRichAiDigest`, HTML fallback `renderAiDigest`).
+- **Standard digest**: a digest whose content is the event list (`renderRichEventDigest`, HTML fallback `renderEventDigest`).
+- **Digest part**: one Telegram message of a digest. The cursor advances only after every part is sent.
+
 - One Croner job per active subscription. Cron expression derived from `schedulePreset` + `timezone`.
   - `as_fetched` → the collector's `POLL_INTERVAL_CRON` (admin-only preset)
   - `hourly` → `0 * * * *`
@@ -127,7 +135,7 @@ No `delivery_log` table — cursor is the source of truth.
   3. Query events for `accountId` newer than `lastDeliveredAt` (or all if null).
   4. Apply filters (`/filters/apply.ts`).
   5. If 0 events pass: do not send anything. Advance cursor to `now`. Log at debug.
-  6. If >0: render with `/formatting/render.ts`. If the subscription has `aiSummary` on and `OPENCODE_API_KEY` is set, ask `/src/ai/summary.ts` for a prose summary (opencode Go, `deepseek-v4-flash`, 30s timeout; every request sends `user-agent: gh-watcher-bot/1.0` and an `x-opencode-session` UUID that is shared by retries of one digest and new for each digest, as opencode Go requires) and send it as a single message rendered by `renderAiDigest`; on any AI failure fall back to the standard digest. Send to chat. On success, advance cursor to the newest event's `createdAt`.
+  6. If >0: render the digest twice, as rich message parts (`/formatting/rich.ts`) and as HTML messages (`/formatting/render.ts`). If the subscription has `aiSummary` on and `OPENCODE_API_KEY` is set, ask `/src/ai/summary.ts` for a prose summary (opencode Go, `deepseek-v4-flash`, 30s timeout; every request sends `user-agent: gh-watcher-bot/1.0` and an `x-opencode-session` UUID that is shared by retries of one digest and new for each digest, as opencode Go requires) and use it as the AI digest; on any AI failure fall back to the standard digest. Send through `sendDigest` in `/scheduler/deliverer.ts`, the one send path shared by scheduled delivery, Preview now and admin force-deliver: each rich part goes out with `sendRichMessage` and `skip_entity_detection: true` (so `@user`, `#123` and `/cmd` in commit text are not auto-linked). If the first part gets a 400 that is not about the chat itself (such as "chat not found"), send the HTML version of the same digest kind with `sendMessage` instead. A failure on a later part is a normal send failure (step 7). On success, advance cursor to the newest event's `createdAt`.
   7. On Telegram send failure: log error, do NOT advance cursor. The next scheduled run will retry.
 - Write a heartbeat (`key="deliverer.last_tick"`) after each delivery task settles (success or failure).
 
@@ -158,7 +166,7 @@ When a user toggles a filter in the menu away from preset defaults, set `subscri
 
 ## Telegram bot configuration
 
-- Use HTML parse mode globally. Escape user-controlled strings (repo names, commit messages, usernames) with a helper that escapes `<`, `>`, `&`.
+- Use HTML parse mode globally for `sendMessage`-style methods. Digests go out as rich messages (`sendRichMessage` with `rich_message.html`), which take HTML in the payload instead of a parse mode; only `url` buttons are allowed in them, no `callback_data` and no button styles. Rich parts stay under 32,768 characters (markup included) and 500 blocks (every block tag, list items included), split at repo boundaries with the title repeated. Escape user-controlled strings (repo names, commit messages, usernames) with a helper that escapes `<`, `>`, `&`.
 - Throttler: install `@grammyjs/transformer-throttler` with default config on `bot.api.config.use`.
 - Auto-retry: install `@grammyjs/auto-retry` with `maxRetryAttempts: 3, retryOnInternalServerErrors: true`.
 - Menu: use `@grammyjs/menu` for every interactive surface. No callback_query handlers outside the menu plugin.
@@ -286,6 +294,7 @@ Counters:
 - `delivery_duration_ms` (rolling histogram, last 100)
 - `telegram_api_errors_total{code}`
 - `ai_summaries_total{status: "ok"|"error"}`
+- `digest_format_total{format: "rich"|"html_fallback"}` (one per fully sent digest; admin Diagnostics shows the fallback rate)
 - `subscriptions_active` (gauge, recomputed on read)
 - `chats_active` (gauge, recomputed on read)
 

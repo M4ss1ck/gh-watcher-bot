@@ -72,6 +72,32 @@ const pushDetail = (payload: GitHubEventPayload): string | null => {
   return `${messages.join("; ")}${suffix}`;
 };
 
+export type PushCommitLines = { lines: string[]; remaining: number };
+
+// First line of each shown commit, for renderers that list commits separately.
+const maxCommitLines = 3;
+
+export const pushCommitLines = (event: StoredEvent): PushCommitLines => {
+  const commits = event.payload.commits;
+
+  if (event.type !== "PushEvent" || !Array.isArray(commits)) {
+    return { lines: [], remaining: 0 };
+  }
+
+  const lines = commits
+    .map((commit) =>
+      isRecord(commit) ? getRecordString(commit, "message") : null
+    )
+    .filter((message): message is string => message !== null)
+    .map((message) => message.split("\n", 1)[0]?.trim() ?? "")
+    .filter((line) => line !== "")
+    .slice(0, maxCommitLines);
+  const size = event.payload.size;
+  const total = typeof size === "number" ? Math.max(size, commits.length) : commits.length;
+
+  return { lines, remaining: Math.max(0, total - lines.length) };
+};
+
 const pushSummary = (event: StoredEvent): EventSummary => {
   const ref = getString(event.payload, "ref");
   const branch = ref === null ? "unknown" : normalizeBranchName(ref);

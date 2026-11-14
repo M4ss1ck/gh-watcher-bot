@@ -2,6 +2,7 @@
 export type GitHubApiStatus = "200" | "304" | "4xx" | "5xx" | "error";
 export type DeliveryStatus = "ok" | "empty" | "error";
 export type AiSummaryStatus = "ok" | "error";
+export type DigestFormatLabel = "rich" | "html_fallback";
 
 export type MetricsSnapshot = {
   githubApiRequestsTotal: Record<GitHubApiStatus, number>;
@@ -10,6 +11,7 @@ export type MetricsSnapshot = {
   deliveryDurationMs: number[];
   telegramApiErrorsTotal: Record<string, number>;
   aiSummariesTotal: Record<AiSummaryStatus, number>;
+  digestFormatTotal: Record<DigestFormatLabel, number>;
 };
 
 const githubApiRequestsTotal: Record<GitHubApiStatus, number> = {
@@ -31,6 +33,11 @@ const deliveryDurationMs: number[] = [];
 const aiSummariesTotal: Record<AiSummaryStatus, number> = {
   ok: 0,
   error: 0
+};
+
+const digestFormatTotal: Record<DigestFormatLabel, number> = {
+  rich: 0,
+  html_fallback: 0
 };
 
 const incrementMap = (map: Map<string, number>, key: string, by = 1): void => {
@@ -65,13 +72,18 @@ export const incrementAiSummary = (status: AiSummaryStatus): void => {
   aiSummariesTotal[status] += 1;
 };
 
+export const incrementDigestFormat = (format: DigestFormatLabel): void => {
+  digestFormatTotal[format] += 1;
+};
+
 export const getMetricsSnapshot = (): MetricsSnapshot => ({
   githubApiRequestsTotal: { ...githubApiRequestsTotal },
   eventsCollectedTotal: Object.fromEntries(eventsCollectedTotal),
   deliveriesSentTotal: { ...deliveriesSentTotal },
   deliveryDurationMs: [...deliveryDurationMs],
   telegramApiErrorsTotal: Object.fromEntries(telegramApiErrorsTotal),
-  aiSummariesTotal: { ...aiSummariesTotal }
+  aiSummariesTotal: { ...aiSummariesTotal },
+  digestFormatTotal: { ...digestFormatTotal }
 });
 
 export const resetMetricsForTests = (): void => {
@@ -90,5 +102,9 @@ export const resetMetricsForTests = (): void => {
 
   for (const key of Object.keys(aiSummariesTotal) as AiSummaryStatus[]) {
     aiSummariesTotal[key] = 0;
+  }
+
+  for (const key of Object.keys(digestFormatTotal) as DigestFormatLabel[]) {
+    digestFormatTotal[key] = 0;
   }
 };

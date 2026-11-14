@@ -42,14 +42,16 @@ import {
 } from "~/github/poller";
 import { logger } from "~/lib/logger";
 import {
+  createDeliveryTransport,
   runDeliveryTask,
-  type DeliverySendMessage,
-  type DeliveryTaskResult
+  type DeliveryApi,
+  type DeliveryTaskResult,
+  type DeliveryTransport
 } from "~/scheduler/deliverer";
 
 type PreviewDeliver = (options: {
   subscriptionId: number;
-  sendMessage: DeliverySendMessage;
+  transport: DeliveryTransport;
 }) => Promise<DeliveryTaskResult>;
 
 export type SubscriptionPreviewOptions = {
@@ -63,7 +65,7 @@ export type SubscriptionPreviewOptions = {
     options: { client: GitHubEventsClient }
   ) => Promise<PollResult>;
   deliver?: PreviewDeliver;
-  sendMessage: DeliverySendMessage;
+  api: DeliveryApi;
   reply: (text: string) => Promise<void>;
   timezone?: string;
 };
@@ -150,7 +152,7 @@ export const runSubscriptionPreview = async (
   const deliver = options.deliver ?? runDeliveryTask;
   const result = await deliver({
     subscriptionId: options.subscriptionId,
-    sendMessage: options.sendMessage
+    transport: createDeliveryTransport(options.api)
   });
 
   if (result.status === "empty") {
@@ -242,11 +244,7 @@ export const subscriptionMenu = new Menu<Context>(subscriptionMenuId)
         accountId: state.accountId,
         accountLogin: state.accountLogin,
         timezone: state.timezone,
-        sendMessage: async (chatId, text) => {
-          await ctx.api.sendMessage(chatId, text, {
-            link_preview_options: { is_disabled: true }
-          });
-        },
+        api: ctx.api,
         reply: async (text) => {
           await ctx.reply(text);
         }
