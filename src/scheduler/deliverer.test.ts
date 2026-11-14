@@ -17,6 +17,7 @@ import {
   type SubscriptionForDelivery
 } from "~/scheduler/deliverer";
 import { filterPresets } from "~/filters/presets";
+import { getMetricsSnapshot, resetMetricsForTests } from "~/lib/metrics";
 
 type SendRich = DeliveryTransport["sendRich"];
 
@@ -609,6 +610,29 @@ describe("runDeliveryTask send path", () => {
       })
     ).rejects.toThrow();
     expect(cursorWrites).toEqual([]);
+  });
+});
+
+describe("digest format counter", () => {
+  test("counts one rich or fallback digest per delivery, none on failure", async () => {
+    resetMetricsForTests();
+    const run = (transport: DeliveryTransport, events: StoredEvent[]) =>
+      runDeliveryTask({
+        subscriptionId: subscription.id,
+        store: createStore(events).store,
+        transport,
+        now: new Date("2026-05-20T13:00:00Z")
+      });
+
+    await run(recordingTransport().transport, manyPushEvents(200));
+    await run(recordingTransport(() => telegramError(400)).transport, [pushEvent]);
+    await run(
+      recordingTransport((index) => (index === 1 ? telegramError(400) : null)).transport,
+      manyPushEvents(200)
+    ).catch(() => undefined);
+
+    expect(getMetricsSnapshot().digestFormatTotal).toEqual({ rich: 1, html_fallback: 1 });
+    expect(getMetricsSnapshot().telegramApiErrorsTotal).toEqual({ "400": 1 });
   });
 });
 

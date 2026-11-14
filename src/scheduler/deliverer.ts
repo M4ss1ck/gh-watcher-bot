@@ -17,6 +17,7 @@ import { shuttingDown } from "~/lifecycle/shutdown";
 import { createChildLogger, logger } from "~/lib/logger";
 import {
   incrementDeliverySent,
+  incrementDigestFormat,
   incrementTelegramApiError,
   observeDeliveryDuration
 } from "~/lib/metrics";
@@ -303,18 +304,23 @@ export const sendDigest = async (
       throw error;
     }
 
+    // Not counted as a Telegram error: the digest still arrives, and the
+    // fallback rate in digest_format_total is the signal to watch.
     taskLogger.warn({ err: error }, "rich digest rejected, sending HTML fallback");
 
     for (const message of digest.html) {
       await transport.sendHtml(chatId, message);
     }
 
+    incrementDigestFormat("html_fallback");
     return { format: "html_fallback", messageCount: digest.html.length };
   }
 
   for (const message of rest) {
     await transport.sendRich(chatId, message);
   }
+
+  incrementDigestFormat("rich");
 
   return { format: "rich", messageCount: digest.rich.length };
 };
@@ -500,6 +506,7 @@ const executeDeliveryTask = async (
   taskLogger.info(
     {
       event_count: matchingEvents.length,
+      format: sent.format,
       message_count: sent.messageCount,
       duration_ms: Date.now() - startedAt
     },

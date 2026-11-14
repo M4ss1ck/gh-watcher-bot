@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import {
   getMetricsSnapshot,
   incrementAiSummary,
+  incrementDigestFormat,
   incrementDeliverySent,
   incrementEventsCollected,
   incrementGitHubApiRequest,
@@ -46,6 +47,10 @@ describe("metrics", () => {
       aiSummariesTotal: {
         ok: 0,
         error: 0
+      },
+      digestFormatTotal: {
+        rich: 0,
+        html_fallback: 0
       }
     });
   });
@@ -59,5 +64,17 @@ describe("metrics", () => {
     const snapshot = getMetricsSnapshot();
 
     expect(snapshot.aiSummariesTotal).toEqual({ ok: 1, error: 2 });
+  });
+
+  test("counts digest formats and resets them", () => {
+    resetMetricsForTests();
+    incrementDigestFormat("rich");
+    incrementDigestFormat("rich");
+    incrementDigestFormat("html_fallback");
+
+    expect(getMetricsSnapshot().digestFormatTotal).toEqual({ rich: 2, html_fallback: 1 });
+
+    resetMetricsForTests();
+    expect(getMetricsSnapshot().digestFormatTotal).toEqual({ rich: 0, html_fallback: 0 });
   });
 });

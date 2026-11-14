@@ -46,7 +46,11 @@ export type AdminDiagnosticsInput = {
   aiModel?: string | null;
   metrics?: Pick<
     MetricsSnapshot,
-    "githubApiRequestsTotal" | "deliveriesSentTotal" | "telegramApiErrorsTotal" | "aiSummariesTotal"
+    | "githubApiRequestsTotal"
+    | "deliveriesSentTotal"
+    | "telegramApiErrorsTotal"
+    | "aiSummariesTotal"
+    | "digestFormatTotal"
   >;
 };
 
@@ -109,6 +113,16 @@ export const formatAiModelSelection = (selection: ModelSelection | null): string
   return `${selection.model.id} (${selection.reason})${cost}`;
 };
 
+const formatDigestFormats = (
+  formats: MetricsSnapshot["digestFormatTotal"]
+): string => {
+  const total = formats.rich + formats.html_fallback;
+  const rate =
+    total === 0 ? "" : ` (${((formats.html_fallback / total) * 100).toFixed(1)}% fallback)`;
+
+  return `Digest format: rich=${formats.rich}, html_fallback=${formats.html_fallback}${rate}`;
+};
+
 export const buildAdminDiagnosticsMessage = (
   input: AdminDiagnosticsInput
 ): string => {
@@ -116,6 +130,7 @@ export const buildAdminDiagnosticsMessage = (
   const deliveries = input.metrics?.deliveriesSentTotal;
   const telegramErrors = input.metrics?.telegramApiErrorsTotal;
   const aiSummaries = input.metrics?.aiSummariesTotal;
+  const digestFormats = input.metrics?.digestFormatTotal;
   const telegramErrorCount = Object.values(telegramErrors ?? {}).reduce(
     (sum, value) => sum + value,
     0
@@ -138,6 +153,7 @@ export const buildAdminDiagnosticsMessage = (
     aiSummaries === undefined
       ? null
       : `AI summaries: ok=${aiSummaries.ok}, error=${aiSummaries.error}`,
+    digestFormats === undefined ? null : formatDigestFormats(digestFormats),
     input.aiModel === undefined || input.aiModel === null ? null : `AI model: ${input.aiModel}`,
     telegramErrors === undefined
       ? null

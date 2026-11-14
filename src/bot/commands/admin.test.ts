@@ -46,11 +46,16 @@ describe("admin helpers", () => {
         aiSummariesTotal: {
           ok: 3,
           error: 1
+        },
+        digestFormatTotal: {
+          rich: 7,
+          html_fallback: 1
         }
       }
     });
 
     expect(message).toContain("Active subscriptions: 7");
+    expect(message).toContain("Digest format: rich=7, html_fallback=1 (12.5% fallback)");
     expect(message).toContain("AI summaries: ok=3, error=1");
     expect(message).not.toContain("AI model");
   });
@@ -107,6 +112,28 @@ describe("admin helpers", () => {
       "Broadcast to 2 active chats?\n\nhello"
     );
     expect(buildBroadcastConfirmationText("x".repeat(160), 1)).toContain("...");
+  });
+});
+
+describe("digest format diagnostics", () => {
+  test("omits the fallback rate before any digest is sent", () => {
+    const message = buildAdminDiagnosticsMessage({
+      lastCollectorTickAge: "1s ago",
+      githubRateLimitRemaining: "unknown",
+      activeSubscriptions: 0,
+      activeChats: 0,
+      eventsIngestedLast24h: 0,
+      errorsLast24h: 0,
+      metrics: {
+        githubApiRequestsTotal: { "200": 0, "304": 0, "4xx": 0, "5xx": 0, error: 0 },
+        deliveriesSentTotal: { ok: 0, empty: 0, error: 0 },
+        telegramApiErrorsTotal: {},
+        aiSummariesTotal: { ok: 0, error: 0 },
+        digestFormatTotal: { rich: 0, html_fallback: 0 }
+      }
+    });
+
+    expect(message).toContain("Digest format: rich=0, html_fallback=0\n");
   });
 });
 
