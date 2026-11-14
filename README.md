@@ -57,9 +57,17 @@ Migrations run automatically at startup. The Docker healthcheck reads the collec
 
 Subscription settings (preset, filters, schedule, timezone, repos, AI summary) are edited through inline menus. Chat-scoped changes require chat admin rights.
 
+### Digests
+
+A digest arrives as one Telegram rich message: a "@login · GitHub activity" title, a "since" time shown relative in each reader's own locale, then one collapsible section per repository. Each section's summary line links the repository and counts what happened, for example "3 pushes, 1 PR merged". Sections start collapsed when the digest covers several repositories and open when it covers one. Pushes list their commit titles underneath.
+
+A rich message holds up to 32,768 characters and 500 blocks, so most digests fit in one. Bigger ones split at repository boundaries, repeating the title on each part. Mentions, issue numbers and commands written in commit messages are shown as plain text, not links.
+
+If Telegram rejects the rich message, the same digest is sent as classic HTML messages instead. Admin Diagnostics shows how often that happens.
+
 ### AI summaries
 
-With OPENCODE_API_KEY set, each subscription menu shows an "AI summary" toggle. Every digest groups repositories under linked headings, with changes in Telegram expandable quotes. Telegram may show a short preview before a quote is expanded. When AI summary is on, the bot makes one AI request per repository and places each prose summary under that repository's heading. If any AI request fails, the bot sends the standard digest instead; deliveries are never blocked on the AI provider. Long sections split across messages to stay within Telegram's message limit.
+With OPENCODE_API_KEY set, each subscription menu shows an "AI summary" toggle. When AI summary is on, the bot makes one AI request per repository and places each prose summary in that repository's section. If any AI request fails, the bot sends the standard digest instead; deliveries are never blocked on the AI provider.
 
 The model is not hardcoded. At boot and then daily, the bot joins opencode Go's live model list with the prices published on models.dev, ranks models by the estimated cost of one summary request, and sends a real summary request to the cheapest few (three at a time, at most six). The cheapest one that finishes with text wins. AI cost scales with the number of repositories in a digest. Models served on the OpenAI Responses or Anthropic Messages endpoints get the matching request shape, with reasoning set to the lowest effort they accept.
 
