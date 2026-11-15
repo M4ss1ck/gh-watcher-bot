@@ -81,8 +81,7 @@ describe("renderRichEventDigest", () => {
         "<li><a href=\"https://github.com/octocat\">octocat</a> <a href=\"https://github.com/octocat/hello-world/commit/abc123456789\">pushed 2 commits to main</a>",
         "<ul><li>Fix parser &lt;edge&gt;</li><li>Add tests &amp; docs</li></ul></li>",
         "<li><a href=\"https://github.com/release-bot%5Bbot%5D\">release-bot[bot]</a> <a href=\"https://github.com/octocat/hello-world/releases/tag/v1.2.3\">published release Version &lt;1.2.3&gt;</a></li>",
-        "</ul></details>",
-        "<footer>Manage with /subscribe</footer>"
+        "</ul></details>"
       ].join("")
     ]);
   });
@@ -143,9 +142,10 @@ describe("renderRichEventDigest", () => {
       expect(part).not.toContain("(continued)");
     }
     expect(parts.join("").match(/<details>/gu)).toHaveLength(3);
-    expect(parts.map((part) => part.includes("<footer>"))).toEqual(
-      parts.map((_, index) => index === parts.length - 1)
-    );
+    // Digests carry no footer; the title alone is repeated on each part.
+    for (const part of parts) {
+      expect(part).not.toContain("<footer>");
+    }
     expect(parts).toMatchSnapshot();
   });
 
@@ -231,8 +231,7 @@ describe("renderRichAiDigest", () => {
         "<p>since <tg-time unix=\"1779274800\" format=\"r\">2026-05-20 11:00 UTC</tg-time></p>",
         "<details open><summary><a href=\"https://github.com/octocat/hello-world\">octocat/hello-world</a> · 1 push, 1 release</summary>",
         "<p>Shipped &lt;v2&gt; &amp; more.</p><p>Also fixed a bug.</p>",
-        "</details>",
-        "<footer>Manage with /subscribe</footer>"
+        "</details>"
       ].join("")
     ]);
   });

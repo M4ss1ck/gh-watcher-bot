@@ -23,7 +23,6 @@ export type RichDigestOptions = {
 
 // Long single texts are clipped so one event can never outgrow a whole message.
 const maxTextLength = 1_000;
-const footer = "<footer>Manage with /subscribe</footer>";
 const blockTagPattern = /<(?:h[1-6]|p|ul|ol|li|details|footer|blockquote|pre|table|tr|hr|aside)[\s>]/gu;
 // Text right before a nested block (like "pushed 2 commits<ul>") is wrapped in an
 // implicit paragraph that Telegram counts as one more block.
@@ -176,8 +175,8 @@ const packSections = (sections: RepoSection[], options: RichDigestOptions): stri
   const header = renderHeader(options.login, options.since);
   const limits = options.limits ?? richMessageLimits;
   const open = sections.length === 1 ? " open" : "";
-  const charBudget = limits.maxCharacters - header.length - footer.length;
-  const blockBudget = limits.maxBlocks - countRichBlocks(header) - countRichBlocks(footer);
+  const charBudget = limits.maxCharacters - header.length;
+  const blockBudget = limits.maxBlocks - countRichBlocks(header);
   const parts: Part[] = [];
   let current: Part = { body: "", blocks: 0 };
 
@@ -238,9 +237,7 @@ const packSections = (sections: RepoSection[], options: RichDigestOptions): stri
 
   flush();
 
-  return parts.map(
-    (part, index) => `${header}${part.body}${index === parts.length - 1 ? footer : ""}`
-  );
+  return parts.map((part) => `${header}${part.body}`);
 };
 
 export const renderRichEventDigest = (
