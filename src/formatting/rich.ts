@@ -59,7 +59,7 @@ const renderHeader = (login: string, since: Date | null): string => {
   const unix = Math.floor(since.getTime() / 1000);
   const fallback = escapeHtml(formatDateTimeInTimeZone(since, "UTC"));
 
-  return `${title}<p>since <tg-time unix="${unix}" format="r">${fallback}</tg-time></p>`;
+  return `${title}<p><tg-time unix="${unix}" format="r">${fallback}</tg-time></p>`;
 };
 
 const countLabel = (event: StoredEvent): [string, string] => {

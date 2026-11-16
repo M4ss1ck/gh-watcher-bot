@@ -75,7 +75,7 @@ describe("renderRichEventDigest", () => {
     expect(renderRichEventDigest([pushEvent, releaseEvent], base)).toEqual([
       [
         "<h3>@octocat · GitHub activity</h3>",
-        "<p>since <tg-time unix=\"1779274800\" format=\"r\">2026-05-20 11:00 UTC</tg-time></p>",
+        "<p><tg-time unix=\"1779274800\" format=\"r\">2026-05-20 11:00 UTC</tg-time></p>",
         "<details open><summary><a href=\"https://github.com/octocat/hello-world\">octocat/hello-world</a> · 1 push, 1 release</summary>",
         "<ul>",
         "<li><a href=\"https://github.com/octocat\">octocat</a> <a href=\"https://github.com/octocat/hello-world/commit/abc123456789\">pushed 2 commits to main</a>",
@@ -228,7 +228,7 @@ describe("renderRichAiDigest", () => {
     expect(parts).toEqual([
       [
         "<h3>@octocat · GitHub activity</h3>",
-        "<p>since <tg-time unix=\"1779274800\" format=\"r\">2026-05-20 11:00 UTC</tg-time></p>",
+        "<p><tg-time unix=\"1779274800\" format=\"r\">2026-05-20 11:00 UTC</tg-time></p>",
         "<details open><summary><a href=\"https://github.com/octocat/hello-world\">octocat/hello-world</a> · 1 push, 1 release</summary>",
         "<p>Shipped &lt;v2&gt; &amp; more.</p><p>Also fixed a bug.</p>",
         "</details>"
